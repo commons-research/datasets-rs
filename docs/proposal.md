@@ -2,7 +2,7 @@
 
 ## Question
 
-Does collecting and adding structure to separate metabolomics datasets with rust increase interoperability and produce an actionable artifact for downstream use?
+Can a common programmatic representation and repository of heterogeneous metabolomics datasets improve their interoperability and enable reusable downstream access?
 
 ## Insights
 
@@ -52,3 +52,13 @@ The positive impacts of this project on the lab research can be categorized as:
 This project currently is focused on metabolomics datasets that have been made publicly available. However it is foreseeable that if the implementation is successful in creating a unified interface for working with metabolomics datasets that support be added for access to proprietary datasets. 
 
 For technology, the project is planned to be written in Rust, leaning on Rust's type system to help ensure enforcement of interoperability rules. 
+
+## Expected Results
+
+The expected results from this project include a library that ingests metabolomics datasets, applies a standard representation for the given dataset, including acquisition/materialization, and allows for documenting where and which properties can be generalized, and how. Where generalization fails, this is documented. 
+
+Thus there are three expected outputs:
+1. Scientific results: Which properties are required for interoperable programmatic representation of heterogeneous metabolomics datasets? 
+2. Engineering artifact: the library itself (`metabolomics-datasets-rs`)
+3. Empirical results: Set of real datasets representable through the abstraction, as well as documentation for failures and/or exceptions. 
+
