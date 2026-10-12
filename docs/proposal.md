@@ -80,6 +80,16 @@ The following projects address adjacent aspects of dataset discovery, descriptio
 | **RO-Crate** | Packages research objects and their contextual metadata using JSON-LD and linked-data principles. | Mature specification with current releases, active implementations, and adoption in research-data infrastructures. [researchobject.org](https://www.researchobject.org/ro-crate/specification) | Richer semantic packaging and provenance model than is initially required here; it does not primarily provide dataset discovery/materialization as a programming-library abstraction. |
 | **`torchvision.datasets`** | Dataset classes hide dataset-specific downloading, extraction, indexing, and sample access behind a common Python interface. | Maintained as part of the official PyTorch vision ecosystem and widely used in computer-vision research and tutorials. [PyTorch Docs](https://docs.pytorch.org/vision/main/datasets.html) | Demonstrates the usefulness of a common loader interface, but also relies heavily on bespoke dataset classes and targets a single ML domain rather than scientific dataset metadata and heterogeneous external repositories. |
 
+### Closest Comparative Projects
+
+Conceptually Hugging Face's datasets, Bioconductor ExperimentHub, and Croissant appear to be the closest to this project. 
+
+Hugging Face allows for a standardized way to download hosted datasets, similar to Zenodo, however upon survey datasets hosted on Hugging Face's datasets that are Metabolomic or related are not well organized or searchable in a standard way (keyword standardization for filtering is an issue). This does speak to Hugging Face's datasets as a good source of relevant datasets, though still needing to be curated, such as in this project. 
+
+ExperimentHub combines resource metadta, programmatic retrieval, caching, and downstream scientific reuse. This project differs from ExperimentHub in that this project intends to describe datasets from multiple external infrastructures and while ExperimentHub has been written in R, this project will be written in Rust and integratable directly into downstream Rust based workflows. 
+
+Croissant offers a clear example of representation of datasets and separates datasets conceptually from files, resources, fields, licensing, and loading information. This project may look to Croissant for relevant ideas and differs from Croisasnt in that this project is metabolomics focused and through a smaller scope may be able to achieve clearer conclusions on the generaalization of dataset representations in this field. 
+
 ## Scope
 
 This project currently is focused on metabolomics datasets that have been made publicly available. However it is foreseeable that if the implementation is successful in creating a unified interface for working with metabolomics datasets that support be added for access to proprietary datasets. 
