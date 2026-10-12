@@ -40,13 +40,28 @@ Together, these works show that interoperability has been addressed at several l
 
 ## Expected Results
 
-The expected results from this project include a library that ingests metabolomics datasets, applies a standard representation for the given dataset, including acquisition/materialization, and allows for documenting where and which properties can be generalized, and how. Where generalization fails, this is documented. 
+The expected engineering result is a Rust library (crate) that represents known and user-defined datasets, records scientific and administrative metadata about them, materializes their upstream resources locally, and exposes the resulting artifacts through a consistent API, including filtering datasets by metadata for downstream use (such as retrieving all `SMILES` datasetts). 
 
-Thus there are three expected outputs:
-1. Scientific results: Which properties are required for interoperable programmatic representation of heterogeneous metabolomics datasets? 
-2. Engineering artifact: the library itself (`metabolomics-datasets-rs`)
-3. Empirical results: Set of real datasets representable through the abstraction, as well as documentation for failures and/or exceptions. 
+The software is not the sole research result though and will also record what must be added or changed as heterogeneous datasets with potentially different features are incorporated, thereby producing empirical evidence about the reusable and non-reusable aspects of dataset-level interoperability. 
 
+Three outputs are expected: 
+1. **Scientific Results**: Tested description of the dataset-level properties required for interoperable programmatic representation and acquisition. 
+2. **Engineering Artifact**: Open-source library with  public API for downstream use both in and out of the lab. 
+3. **Empirical Results**: Collection of real datasets implemented through the abstraction, along with documented exceptions to integration, missing metadata, source-specific requirements, and cases where generalization fails. 
+
+Evaluation will distinguish source-specific adaptation vs shared-model redesigns. Source-specific code for obtaining a Zenodo record, HTTP resource, dataset hosted on Hugging Face, or a study repository is expected. However repeated change4s to the conceptual `Dataset` model whenever a new dataset is introduced will likely indicate that the abstraction requires further generalization. 
+
+| Evaluation | Measurement | Evidence of success | Failure signal |
+|---|---|---|---|
+| **Model stability** | Changes to the shared dataset model as new pilot datasets are added | Later datasets can be incorporated primarily through source/layout adapters and existing metadata fields | Each dataset requires new public concepts or substantial redesign of the common model |
+| **Acquisition/materialization** | Ability to reconstruct a usable local dataset from a clean environment | Selected public datasets can be reproducibly located and materialized through the same high-level API | Dynamic links, undocumented versions, authentication, or special cases make repeatable access unreliable |
+| **Metadata coverage** | Availability and representation of source, content, license, citation, version/provenance, and artifact information | Available upstream information can be represented consistently and missing information is explicitly distinguishable from known values | Important scientific or reuse information must be discarded or encoded as unstructured special cases |
+| **Dataset diversity** | Number and heterogeneity of supported sources, formats, scales, and scientific content | The model works across structure-centric, MS/MS, API-based, archive-based, and repository-hosted resources | The abstraction only works for datasets that are already structurally similar |
+| **Downstream usability** | Use from at least one existing analysis/parser workflow | Multiple datasets can be supplied to downstream software without reimplementing their acquisition logic | Downstream consumers must still know how each dataset is hosted and fetched |
+
+The project will be considered scientifically useful even if a fully general abstraction is not achieved. A negative result—for example, demonstrating that certain classes of metabolomics resources cannot share a meaningful dataset-level model without extensive bespoke behavior—would identify concrete limits to interoperability and provide evidence for how future datasets should be published.
+
+A stronger failure would occur if the common model provides effectively no information beyond a name and download location, or if nearly every supported dataset requires a distinct public API. In that case, the proposed abstraction would not justify itself as an interoperability layer.
 
 ## Similar Projects
 
