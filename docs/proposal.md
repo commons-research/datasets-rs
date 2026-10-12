@@ -32,6 +32,14 @@ The positive impacts of this project on the lab research can be categorized as:
 
 ## Expected Results
 
+The expected results from this project include a library that ingests metabolomics datasets, applies a standard representation for the given dataset, including acquisition/materialization, and allows for documenting where and which properties can be generalized, and how. Where generalization fails, this is documented. 
+
+Thus there are three expected outputs:
+1. Scientific results: Which properties are required for interoperable programmatic representation of heterogeneous metabolomics datasets? 
+2. Engineering artifact: the library itself (`metabolomics-datasets-rs`)
+3. Empirical results: Set of real datasets representable through the abstraction, as well as documentation for failures and/or exceptions. 
+
+
 ## Similar Projects
 
 | Project | What to investigate | Why it matters to `metabolomics-datasets-rs` |
@@ -53,12 +61,14 @@ This project currently is focused on metabolomics datasets that have been made p
 
 For technology, the project is planned to be written in Rust, leaning on Rust's type system to help ensure enforcement of interoperability rules. 
 
-## Expected Results
+### Datasets
 
-The expected results from this project include a library that ingests metabolomics datasets, applies a standard representation for the given dataset, including acquisition/materialization, and allows for documenting where and which properties can be generalized, and how. Where generalization fails, this is documented. 
+| Dataset | Content | Source | Approximate size | Access mechanism |
+|---|---|---|---|---|
+| LOTUS | ... | Zenodo | ... | Zenodo API |
+| COCONUT | ... | ... | ... | ... |
+| PubChem | ... | ... | ... | ... |
 
-Thus there are three expected outputs:
-1. Scientific results: Which properties are required for interoperable programmatic representation of heterogeneous metabolomics datasets? 
-2. Engineering artifact: the library itself (`metabolomics-datasets-rs`)
-3. Empirical results: Set of real datasets representable through the abstraction, as well as documentation for failures and/or exceptions. 
+## Technologies
 
+Rust will be used for the implementation, with typed representations for dataset metadata and acquisition sources. Initial access mechanisms include HTTP and repository APIs such as Zenodo. Development and testing require ordinary workstation compute and sufficient local storage to materialize the selected datasets. No specialized compute infrastructure is presently anticipated. Public datasets will be prioritized so that authentication or proprietary infrastructure is not required for the initial study.
