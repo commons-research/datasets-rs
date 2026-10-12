@@ -1,21 +1,21 @@
-# Proposal
+# Proposal: `metabolomics-datasets-rs`: Programmatic Interoperability for Heterogeneous Metabolomics Datasets
 
 ## Question
 
-Can a common programmatic representation and repository of heterogeneous metabolomics datasets improve their interoperability and enable reusable downstream access?
+What shared dataset-level properties are required to represent and materialize heterogenous metabolomics datasets through a common programmatic interface, while preserving the information for downstream access? And how much redesign is necessary between datasets? 
 
-## Insights
+## Insights and Motivation
+Public metabolomics and related chemical datasets are distributed through heterogeneous repositories, APIs, archives, file layouts, versions, metadata models, and licensing schemes. Individual resources may be well structured internally, but downstream software often requires dataset-specific knowledge simply to discover, acquire, identify, and prepare a dataset for use. This created duplicated acquisition logic across applications and makes it difficult to treat datasets as interchangeable scientific resources. 
 
-This project should lead to:
-1. Documentation of the current state of metabolomics datasets' interoperability
-2. Fundamental aspects necessary to making a dataset interoperable
-3. Challenges and existing problems with unifying datasets in an interoperable manner. 
+This project will investigate whether a shared dataset-level model can describe sufficiently heterogenous resources without becoming either overly dataset-specific or generic enough that little interoperability beyond a convenience store of URLs is available. The implementation, `metabolomics-datasets-rs`, will therefore serve both as a reusable software artifact and as an experimental instrument: adding each new dataset tests whether the shared representation remains stable, which source-specific adaptations are necessary, and where generalization fails. 
 
-Impact on Commons Lab: 
-The positive impacts of this project on the lab research can be categorized as: 
-*Downstream Application*: Having ready access to a diverse set of datasets, organized by features, could enhance projects that require access to datasets. Moreover, given the majority of the lab's code is currently being written in Rust, a crate makes importing the datasets for use through a standardized method simple and clear. This also enhances the interoperability of the datasets and would allow for downstream use and filtering. Moreover, moving the abstraction for commonly used datasets, such as LOTUS, COCONUT, PUBChEM, to an upstream crate would easy their import for use with the relevant data formats (in this example SMILES). Rather than as a convenience feature flag on a parser crate. 
+The project is expected to produce three principal scientific insights:
 
-*Dataset creation and dataset usage*: The project also has the potential to help shape how the lab chooses to collect and store datasets, as insights from this project offers insights into interoperability from a practical standpoint. The project has the potential to identify common pain points for dataset use, including access issues already discovered, such as dynamic dataset links based on versions. Moreover, the practical access to a wide set of datasets and a standard way to ingest a new dataset into the existing structure presented in this project, should offer cleaner ways to interact with these databases, discovery of other relevant databases that may otherwise have been overlooked, and as a result present a richer data analysis environment for lab research. 
+1. Characterization of current dataset-level interoperability: Which properties of publicly available metabolomics datasets are already sufficiently consisten to support shared programmatic treatment, and which remain specific to a repository or dataset? 
+2. Tested set of requirements for reusable dataset representation: Possible properties include stable identity, acquisition source, content, citation and licensing information, version/provenance information.
+3. Empirical account of generalization limitations: Cases where a new dataset requires modification of the shared model, has difficulty being materialized in a reproducible manner, lacks metadata deemed necessary, or requires overly tailored structure will all be documented. 
+
+This project directly supports the data-modelling and validation axis of my broader PhD project. The doctoral research asks which shared structural constraints are sufficient to map heterogeneous experimental metabolomics datasets to reusable data models, without redesigning the model for each dataset. This project investigates an earlier dataset-level layer of that same problem: Datasets must first be identifiable, obtainable, described, versioned (when available), all before these heterogeneous experimental metabolomic datasets can be structurally or semantically integrated downstream. Ideally this process should be reproducible and reliable, while the metadata and provenance requirements may potentially inform later semantic-interoperability work. 
 
 ## Relevant Work
 
