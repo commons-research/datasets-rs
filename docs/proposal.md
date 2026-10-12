@@ -49,8 +49,6 @@ The positive impacts of this project on the lab research can be categorized as:
 
 ## Scope
 
-### Technologies
+This project currently is focused on metabolomics datasets that have been made publicly available. However it is foreseeable that if the implementation is successful in creating a unified interface for working with metabolomics datasets that support be added for access to proprietary datasets. 
 
-### Datasets 
-
-### 
+For technology, the project is planned to be written in Rust, leaning on Rust's type system to help ensure enforcement of interoperability rules. 
