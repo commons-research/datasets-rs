@@ -12,7 +12,7 @@ This project will develop and curate a collection of metabolomics and related sc
 
 The project is expected to produce three principal scientific insights:
 
-1. Characterization of current dataset-level interoperability: Which properties of publicly available metabolomics datasets are already sufficiently consisten to support shared programmatic treatment, and which remain specific to a repository or dataset?
+1. Characterization of current dataset-level interoperability: Which properties of publicly available metabolomics datasets are already sufficiently consistent to support shared programmatic treatment, and which remain specific to a repository or dataset?
 2. Tested set of requirements for reusable dataset representation: Possible properties include stable identity, acquisition source, content, citation and licensing information, version/provenance information.
 3. Empirical account of generalization limitations: Cases where a new dataset requires modification of the shared model, has difficulty being materialized in a reproducible manner, lacks metadata deemed necessary, or requires overly tailored structure will all be documented.
 
@@ -88,9 +88,9 @@ Conceptually Hugging Face's datasets, Bioconductor ExperimentHub, and Croissant 
 
 Hugging Face datasets combines a large dataset catalogue with standardized discovery, metadata, downloading, caching, and loading through a common programming interface. This is conceptually close to the convenience and curation goals of this project. However, metabolomics and related scientific datasets hosted in the Hugging Face ecosystem are not consistently classified using domain-specific content categories, making targeted discovery difficult. metabolomics-datasets-rs instead curates a substantially narrower scientific domain and can therefore provide metabolomics-relevant classifications such as the availability of molecular structures, SMILES, InChIs, molecular formulae, or MS/MS spectra.
 
-ExperimentHub combines resource metadta, programmatic retrieval, caching, and downstream scientific reuse. This project differs from ExperimentHub in that this project intends to describe datasets from multiple external infrastructures and while ExperimentHub has been written in R, this project will be written in Rust and integratable directly into downstream Rust based workflows.
+ExperimentHub combines resource metadata, programmatic retrieval, caching, and downstream scientific reuse. This project differs from ExperimentHub in that this project intends to describe datasets from multiple external infrastructures and while ExperimentHub has been written in R, this project will be written in Rust and integrable directly into downstream Rust based workflows.
 
-Croissant offers a clear example of representation of datasets and separates datasets conceptually from files, resources, fields, licensing, and loading information. This project may look to Croissant for relevant ideas and differs from Croisasnt in that this project is metabolomics focused and through a smaller scope may be able to achieve clearer conclusions on the generaalization of dataset representations in this field.
+Croissant offers a clear example of representation of datasets and separates datasets conceptually from files, resources, fields, licensing, and loading information. This project may look to Croissant for relevant ideas and differs from Croissant in that this project is metabolomics focused and through a smaller scope may be able to achieve clearer conclusions on the generalization of dataset representations in this field.
 
 ## Scope
 
