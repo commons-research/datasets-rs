@@ -92,18 +92,22 @@ Croissant offers a clear example of representation of datasets and separates dat
 
 ## Scope
 
-This project currently is focused on metabolomics datasets that have been made publicly available. However it is foreseeable that if the implementation is successful in creating a unified interface for working with metabolomics datasets that support be added for access to proprietary datasets. 
-
-For technology, the project is planned to be written in Rust, leaning on Rust's type system to help ensure enforcement of interoperability rules. 
+The initial scope is publicly available metabolomics datasets and closely related chemical datasets that are relevant to the Commons Lab workflows and experiments. For now proprietary datasets are not planned for support though this could change in the future. For now the scope is focused on publicly accessible and open use datasets. 
 
 ### Datasets
 
-| Dataset | Content | Source | Approximate size | Access mechanism |
+| Dataset/resource | Scientific content | Source/access | Approximate scale used for planning | Purpose in evaluation |
 |---|---|---|---|---|
-| LOTUS | ... | Zenodo | ... | Zenodo API |
-| COCONUT | ... | ... | ... | ... |
-| PubChem | ... | ... | ... | ... |
+| **LOTUS** | Natural-product structures, identifiers, taxonomy associations, references | Wikidata-derived releases distributed through Zenodo | Current SMILES snapshots are approximately 8.5 MB compressed; richer historical exports are on the order of hundreds of MB | Tests versioned Zenodo acquisition, structure-centric content, provenance, and links between chemical and biological information |
+| **COCONUT** | Natural-product structures, identifiers, classifications, and metadata | COCONUT downloads and REST API | Approximately 739,000 molecules; current common exports are roughly 200 MB CSV or 700 MB SDF, while the complete database dump is much larger | Tests direct/API access, multiple representations of one conceptual dataset, licensing, and large structure collections |
+| **PubChem Compound** | Chemical structures, identifiers, computed properties, provenance, and linked annotations | NCBI programmatic and bulk-download services | Approximately 125 million compounds in the full collection; bounded exports/subsets will be used initially rather than mirroring the complete database | Tests very large dynamic resources, API/bulk-access distinctions, contributor provenance, and source-specific licensing information |
+| **MassSpecGym** | Annotated MS/MS spectra and molecular structures for computational benchmarking | Hugging Face and associated releases | Core benchmark: approximately 231,000 spectra representing roughly 32,000 molecules; current hosted resources are tens of GB when auxiliary files are included | Introduces MS/MS rather than only structure data and tests a different hosting ecosystem and substantially larger artifacts |
+| **Representative GNPS/MassIVE resource(s)** | Experimental LC-MS/MS data and associated study metadata | GNPS/MassIVE repository services | Individual study sizes vary from modest processed outputs to multi-GB raw collections; selected studies will be used rather than mirroring the repository | Tests repository-level experimental metabolomics, multi-file datasets, richer study context, and acquisition behavior unlike static chemical databases |
 
 ## Technologies
 
-Rust will be used for the implementation, with typed representations for dataset metadata and acquisition sources. Initial access mechanisms include HTTP and repository APIs such as Zenodo. Development and testing require ordinary workstation compute and sufficient local storage to materialize the selected datasets. No specialized compute infrastructure is presently anticipated. Public datasets will be prioritized so that authentication or proprietary infrastructure is not required for the initial study.
+The project will be implemented in Rust, using explicit typed representations for dataset metadata, acquisition sources, and locally materialized artifacts. Rust is consistent with the broader doctoral methodology of investigating reliable scientific infrastructure and enables validation of many invariants through the type system while retaining the performance required for large scientific resources.
+
+Initial acquisition mechanisms will include ordinary HTTP downloads and repository/API clients such as Zenodo. Additional source adapters will be added only when required by datasets selected for evaluation. Format-specific interpretation should remain in appropriate downstream libraries where possible.
+
+Internet access is required for public repositories and APIs. The initial dataset set should not require privileged authentication, dedicated external servers, or software deployment within Zenodo, Hugging Face, GNPS, or other providers. Rate limits and provider usage policies will be respected. If future work requires restricted or proprietary resources, authentication and access-control requirements will be treated as a separate extension rather than assumed by the initial design.
