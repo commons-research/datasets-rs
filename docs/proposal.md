@@ -1,8 +1,8 @@
-# Proposal: `metabolomics-datasets-rs`: Programmatic Interoperability for Heterogeneous Metabolomics Datasets
+# Proposal: Programmatic Interoperability for Heterogeneous Datasets
 
 ## Question
 
-**What shared dataset-level properties and curation practices are required to provide a common programmatic interface for heterogeneous metabolomics datasets, enabling reusable downstream access while minimizing dataset-specific redesign?**
+**Can heterogeneous datasets in large public data repositories be automatically and reliably discovered, classified by their actual contents, and indexed for reproducible programmatic search?**
 
 ## Insights and Motivation
 
