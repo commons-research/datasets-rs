@@ -1,3 +1,9 @@
+[workspace]
+resolver = "3"
+members = [
+	
+]
+
 [package]
 name = "metabolomics-datasets-rs"
 version = "0.1.0"
