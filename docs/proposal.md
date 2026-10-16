@@ -6,7 +6,15 @@
 
 ## Insights and Motivation
 
-Large public repositories, known colloquially as data lakes, such as Hugging Face and Zenodo make large nubmers of datasets available. However availability does not guarantee effective discovery of said dataset or reuse thereof. Search is commonly driven by repository metadata, free-text descriptions, uploader-provided tags, schemas, and file names themselves. These descriptions may be incomplete, inconsistent, or inaccurate with respect to the data actually present. As repositories grow, they risk becoming *data swamps* rather than lakes, where useful datasets may exist, but finding data with a particular scientific content type can require repository-specific searches and manual inspection. 
+Large public repositories, known colloquially as *data lakes*, such as Hugging Face and Zenodo make large nubmers of datasets available. However availability does not guarantee effective discovery of said dataset or reuse thereof. Search is commonly driven by repository metadata, free-text descriptions, uploader-provided tags, schemas, and file names themselves. These descriptions may be incomplete, inconsistent, or inaccurate with respect to the data actually present. As repositories grow, they risk becoming *data swamps* rather than lakes, where useful datasets may exist, but finding data with a particular scientific content type can require repository-specific searches and manual inspection. 
+
+This project investigates whether discovery can be improved by inspecting underlying dataset contents and assigning evidnece-backed scientific labels. Rather than only asking whether a dataset description contains the term `SMILES` for example, the system should determine whether candidate fields actually contain values that can be validate das SMILES. The same approach ca later be extended to molecular formulae, mass-spectrometry data, and other scientific content types. 
+
+The project is therefore focused on the research task of **content-aware dataset discovery**, where crawling heterogenous repositories in precise manner, with the goal of inspecting supported artifacts, validating their scientific contents, indexing the resulting classifications, and making those classifications reproducibly searchable. 
+
+While initially focused on metabolomics and chemistry datasets, the goal is to make this software generic by nature and therefore capable of being applied to any dataset discovery in any scientific field. 
+
+Finally, preliminary reviews of Hugging Face and Zenodo, the two initial data lakes of focus for this project, reveals that search results for datasets can vary substantially depending on queries, dataset metadata, and any other relevant search surfaces. This motivates a controlled comparison between repository-native search and classifications derived from actual underlying data. 
 
 ### Impact on Commons Lab
 
