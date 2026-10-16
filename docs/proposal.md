@@ -1,4 +1,4 @@
-# Proposal: Programmatic Interoperability for Heterogeneous Datasets
+# Proposal: Programmatic Content-Aware Interoperability for Heterogeneous Datasets
 
 ## Question
 
@@ -6,17 +6,7 @@
 
 ## Insights and Motivation
 
-Public metabolomics and related chemical datasets are distributed through heterogeneous repositories, APIs, archives, file layouts, versions, metadata models, and licensing schemes. Individual resources may be well structured internally, but downstream software often requires dataset-specific knowledge simply to discover, acquire, identify, and prepare a dataset for use. This created duplicated acquisition logic across applications and makes it difficult to treat datasets as interchangeable scientific resources.
-
-This project will develop and curate a collection of metabolomics and related scientific datasets behind a shared programmatic interface. Each curated dataset will describe its identity, scientific contents, source, and other relevant metadata while providing the logic necessary to acquire and materialize it for downstream use. Adding each new dataset therefore serves two purposes: it expands the practical utility of the library and tests whether the shared dataset model remains stable, which source-specific adaptations are necessary, and where generalization breaks down.
-
-The project is expected to produce three principal scientific insights:
-
-1. Characterization of current dataset-level interoperability: Which properties of publicly available metabolomics datasets are already sufficiently consistent to support shared programmatic treatment, and which remain specific to a repository or dataset?
-2. Tested set of requirements for reusable dataset representation: Possible properties include stable identity, acquisition source, content, citation and licensing information, version/provenance information.
-3. Empirical account of generalization limitations: Cases where a new dataset requires modification of the shared model, has difficulty being materialized in a reproducible manner, lacks metadata deemed necessary, or requires overly tailored structure will all be documented.
-
-This project directly supports the data-modelling and validation axis of my broader PhD project. The doctoral research asks which shared structural constraints are sufficient to map heterogeneous experimental metabolomics datasets to reusable data models, without redesigning the model for each dataset. This project investigates an earlier dataset-level layer of that same problem: Datasets must first be identifiable, obtainable, described, versioned (when available), all before these heterogeneous experimental metabolomic datasets can be structurally or semantically integrated downstream. Ideally this process should be reproducible and reliable, while the metadata and provenance requirements may potentially inform later semantic-interoperability work.
+Large public repositories, known colloquially as data lakes, such as Hugging Face and Zenodo make large nubmers of datasets available. However availability does not guarantee effective discovery of said dataset or reuse thereof. Search is commonly driven by repository metadata, free-text descriptions, uploader-provided tags, schemas, and file names themselves. These descriptions may be incomplete, inconsistent, or inaccurate with respect to the data actually present. As repositories grow, they risk becoming *data swamps* rather than lakes, where useful datasets may exist, but finding data with a particular scientific content type can require repository-specific searches and manual inspection. 
 
 ### Impact on Commons Lab
 
