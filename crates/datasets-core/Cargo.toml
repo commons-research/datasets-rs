@@ -9,6 +9,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+csv = "1.4.0"
+smiles-rs = "0.1.7"
+thiserror = "2.0.21"
 
 [lints]
 workspace = true
