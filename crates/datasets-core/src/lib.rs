@@ -6,3 +6,4 @@ mod classification;
 mod content;
 
 pub use content::ContentType;
+pub use classification::Classification;

@@ -1,5 +1,8 @@
 [package]
 name = "datasets-crawler"
+description = "Web dataset crawler library and application"
+keywords = ["dataset", "evaluation", "science", "open science"]
+categories = ["open science", "data","big data","data processing"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
