@@ -15,12 +15,12 @@ pub struct Classification {
 impl Classification {
     /// Creates a new classification
     #[must_use]
-    pub fn new(content_type: ContentType, location: String, inspected: usize, valid: usize) -> Self {
-        Self { content_type, location, inspected, valid }
+    pub fn new(content_type: ContentType, location: impl Into<String>, inspected: usize, valid: usize) -> Self {
+        Self { content_type, location: location.into(), inspected, valid }
     }
     /// Returns the `ContentType`
     #[must_use]
-    pub fn content_type(&self) -> ContentType {
+    pub const fn content_type(&self) -> ContentType {
         self.content_type
     }
     /// Returns the defined content location
@@ -30,18 +30,18 @@ impl Classification {
     }
     /// Returns the total inspected entries
     #[must_use]
-    pub fn inspected(&self) -> usize {
+    pub const fn inspected(&self) -> usize {
         self.inspected
     }
     /// Returns the total number of valid entries
     #[must_use]
-    pub fn valid(&self) -> usize {
+    pub const fn valid(&self) -> usize {
         self.valid
     }
     /// Returns the ratio of valid to total entries
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
-    pub fn valid_ratio(&self) -> Option<f64> {
+    pub const fn valid_ratio(&self) -> Option<f64> {
         if self.inspected == 0 {
             None
         } else {
