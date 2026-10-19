@@ -1,6 +1,7 @@
 use super::ContentType;
 
 /// Classifies the dataset into results based on sought [`ContentType`]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Classification {
     /// [`ContentType`] being sought
     content_type: ContentType,

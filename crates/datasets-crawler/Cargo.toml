@@ -10,10 +10,6 @@ repository.workspace = true
 
 [dependencies]
 datasets-core = {path = "../datasets-core"}
-reqwest.workspace = true
-thiserror.workspace = true
-tokio.workspace = true
-zenodo-rs.workspace = true
 
 
 [lints]

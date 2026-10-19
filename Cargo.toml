@@ -10,10 +10,7 @@ license = "Apache-2.0"
 repository = "https://github.com/commons-research/datasets-rs"
 
 [workspace.dependencies]
-reqwest = { version = "0.13.5", features = ["json"] }
-thiserror = "2.0.21"
-tokio = { version = "1.53.1", features = ["fs"] }
-zenodo-rs = { version = "0.3.0", features = ["checksums", "indicatif"] }
+
 
 [workspace.lints.rust]
 missing_docs = "deny"
