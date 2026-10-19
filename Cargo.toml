@@ -1,17 +1,24 @@
-[package]
+[workspace]
+resolver = "3"
+members = [
+	"core",
+	"crawler",	
+]
+
+[workspace.package]
 name = "metabolomics-datasets-rs"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
-[dependencies]
+[workspace.dependencies]
 dirs = "7.0.0"
 reqwest = { version = "0.13.5", features = ["json"] }
 thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["fs"] }
 zenodo-rs = { version = "0.3.0", features = ["checksums", "indicatif"] }
 
-[lints.rust]
+[workspace.lints.rust]
 missing_docs = "deny"
 unsafe_code = "forbid"
 unused_must_use = "deny"
@@ -21,7 +28,7 @@ unused_mut = "deny"
 unused_assignments = "deny"
 dead_code = "deny"
 
-[lints.clippy]
+[worskpace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 cargo = { level = "deny", priority = -1 }
