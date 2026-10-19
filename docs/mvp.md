@@ -10,7 +10,7 @@ Demonstrate datasets hosted in large public repositories can be:
 - indexed
 - searched by actual content
 
-THe MVP should establish a core architecture for crawling datasets, determining whether specific scientific content is actually present, and then making the classifications searchable. 
+The MVP should establish a core architecture for crawling datasets, determining whether specific scientific content is actually present, and then making the classifications searchable. 
 
 ## MVP Scope:
 
