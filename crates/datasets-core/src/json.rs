@@ -91,3 +91,71 @@ fn visit_value<L: Labeler>(
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        ContentType::Smiles,
+        labels::SmilesLabeler,
+    };
+
+    #[test]
+    fn visits_json_string_locations() -> Result<(), CoreError> {
+        let json = r#"
+        {
+            "compounds": [
+                {
+                    "name": "ethanol",
+                    "smiles": "CCO"
+                },
+                {
+                    "name": "acetic acid",
+                    "smiles": "CC(=O)O"
+                },
+                {
+                    "name": "broken",
+                    "smiles": "garbage"
+                }
+            ],
+            "canonical_smiles": [
+                "CCO",
+                "CC(=O)O",
+                "C("
+            ]
+        }
+        "#;
+
+        let classifications =
+            JsonVisitor::visit(json.as_bytes(), &SmilesLabeler)?;
+
+        let expected = vec![
+            Classification::new(
+                Smiles,
+                "$.canonical_smiles[]",
+                3,
+                2,
+            ),
+            Classification::new(
+                Smiles,
+                "$.compounds[].name",
+                3,
+                0,
+            ),
+            Classification::new(
+                Smiles,
+                "$.compounds[].smiles",
+                3,
+                2,
+            ),
+        ];
+
+        assert_eq!(
+            classifications,
+            expected,
+            "JSON visitor should accumulate evidence by normalized JSON location"
+        );
+
+        Ok(())
+    }
+}
