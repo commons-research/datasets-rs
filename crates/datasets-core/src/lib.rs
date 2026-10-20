@@ -12,6 +12,8 @@ mod labeler;
 mod labels;
 /// Tabular data traversal and inspection.
 mod tabular;
+/// JSON data traversal and inspection.
+mod json;
 /// Defines visitor functionality
 mod visitor;
 
