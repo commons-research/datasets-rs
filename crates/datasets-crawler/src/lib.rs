@@ -2,3 +2,5 @@
 
 /// Indexes artifact records
 mod index;
+
+pub use index::{DatasetIndex, IndexedArtifact};
