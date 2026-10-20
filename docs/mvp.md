@@ -12,10 +12,10 @@ Demonstrate datasets hosted in large public repositories can be:
 
 The MVP should establish a core architecture for crawling datasets, determining whether specific scientific content is actually present, and then making the classifications searchable. 
 
-## MVP Scope:
+## MVP Scope
 
 | Axis | MVP |
-|---|---|
+| --- | --- |
 | Repository/source | Hugging Face + Zenodo |
 | Artifact structure | Tabular + JSON |
 | Scientific label | SMILES + Molecular Formula |
@@ -24,6 +24,7 @@ The MVP should establish a core architecture for crawling datasets, determining 
 | Test source | Bounded real datasets + deterministic local fixtures |
 
 ### MVP Feature Map
+
 [x] ContentType
 [x] Classification evidence
 [x] Labeler concept
@@ -40,7 +41,7 @@ The MVP should establish a core architecture for crawling datasets, determining 
 
 ## Architecture
 
-Separate project into inspection, crawling. Then later (not in MVP) serving. 
+Separate project into inspection, crawling. Then later (not in MVP) serving.
 
 `datasets-core -> datasets-crawler -> datasets-server (eventually)`
 
@@ -53,7 +54,7 @@ Responsible for:
 - validating candidate values as SMILES or molecular formulae;
 - returning classification results and supporting evidence.
 
-Visitors need to be based on the data structure visited (tabular, json). 
+Visitors need to be based on the data structure visited (tabular, json).
 
 ### `datasets-crawler`
 
@@ -81,5 +82,5 @@ The MPV should have the following functionality:
 ### Milestones
 
 1. Local Architecture
-2. Real repository sources used 
+2. Real repository sources used
 3. Evaluation of tool
