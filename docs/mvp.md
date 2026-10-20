@@ -23,6 +23,21 @@ The MVP should establish a core architecture for crawling datasets, determining 
 | Validation | Utilizing existing SMILES and molecular-formula parsers |
 | Test source | Bounded real datasets + deterministic local fixtures |
 
+### MVP Feature Map
+[x] ContentType
+[x] Classification evidence
+[x] Labeler concept
+[ ] Tabular visitor
+[ ] Visitor abstraction
+[ ] Formula labeler
+[ ] JSON visitor
+[ ] local end-to-end classification
+[ ] index
+[ ] crawler
+[ ] Hugging Face
+[ ] Zenodo
+[ ] evaluation
+
 ## Architecture
 
 Separate project into inspection, crawling. Then later (not in MVP) serving. 
