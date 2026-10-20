@@ -67,6 +67,7 @@ name = "datasets-core"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "molecular-formulas 0.3.0",
  "smiles-rs",
  "thiserror",
 ]
@@ -196,6 +197,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "molecular-formulas"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64790d746a6d749dd9eb79ed579bf5fce8344a7359ae3647931a4d8cb10418ee"
+dependencies = [
+ "elements_rs",
+ "num-traits",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "multi_ranged"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -311,7 +324,7 @@ dependencies = [
  "elements_rs",
  "geometric-traits",
  "hashbrown",
- "molecular-formulas",
+ "molecular-formulas 0.1.10",
  "smallvec",
  "thiserror",
 ]
