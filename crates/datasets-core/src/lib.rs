@@ -2,6 +2,8 @@
 
 /// Module for classifying data
 mod classification;
+/// Classifies an artifact
+mod classifier;
 /// Module for handling dataset content
 mod content;
 /// Error handling
