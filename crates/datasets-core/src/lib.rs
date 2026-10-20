@@ -12,6 +12,9 @@ mod labeler;
 mod labels;
 /// Tabular data traversal and inspection.
 mod tabular;
+/// Defines visitor functionality
+mod visitor;
+
 
 pub use content::ContentType;
 pub use classification::Classification;

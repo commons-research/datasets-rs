@@ -5,6 +5,7 @@ use super::{
     Classification,
     CoreError,
     labeler::Labeler,
+    visitor::Visitor
 };
 
 
@@ -12,14 +13,14 @@ use super::{
 /// Visits tabular dataset content
 pub struct TabularVisitor;
 
-impl TabularVisitor {
+impl Visitor for TabularVisitor {
     /// Inspects tabular data using the provided scientific labeler.
     /// 
     /// # Errors
     /// - Returns [`CoreError`] when the tabular input cannot be parsed.
-    pub fn visit<R: Read>(
+    fn visit<R: Read, L: Labeler>(
         reader: R,
-        labeler: &impl Labeler,
+        labeler: &L,
     ) -> Result<Vec<Classification>, CoreError>{
         let mut reader = Reader::from_reader(reader);
         let headers = reader.headers()?.clone();
