@@ -31,7 +31,7 @@ The MVP should establish a core architecture for crawling datasets, determining 
 [x] Visitor abstraction
 [x] Formula labeler
 [x] JSON visitor
-[ ] local end-to-end classification
+[x] local end-to-end classification
 [ ] index
 [ ] crawler
 [ ] Hugging Face
