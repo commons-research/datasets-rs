@@ -20,6 +20,6 @@ mod tabular;
 mod visitor;
 
 pub use classification::Classification;
-pub use classifier::{ArtifactFormat, classify_artifact};
+pub use classifier::{ArtifactFormat, Classifier, classify_artifact};
 pub use content::ContentType;
 pub use error::CoreError;
