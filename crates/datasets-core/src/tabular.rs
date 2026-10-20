@@ -53,7 +53,9 @@ impl Visitor for TabularVisitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ContentType::Smiles, labels::SmilesLabeler};
+    use crate::ContentType::MolecularFormula;
+use crate::{ContentType::Smiles, labels::SmilesLabeler};
+    use crate::labels::MolecularFormulaLabeler;
 
     #[test]
     fn visits_each_tabular_column() -> Result<(), CoreError> {
@@ -81,4 +83,31 @@ broken,garbage,C(
 
         Ok(())
     }
+
+    #[test]
+fn visits_tabular_columns_with_formula_labeler() -> Result<(), CoreError> {
+    let csv = "\
+label,formula,alternate_formula
+sample_one,C6H12O6,C6H12O6
+sample_two,H2O,H2O
+sample_three,garbage,C(
+";
+
+    let classifications =
+        TabularVisitor::visit(csv.as_bytes(), &MolecularFormulaLabeler)?;
+
+    let expected = vec![
+        Classification::new(MolecularFormula, "label", 3, 0),
+        Classification::new(MolecularFormula, "formula", 3, 2),
+        Classification::new(MolecularFormula, "alternate_formula", 3, 2),
+    ];
+
+    assert_eq!(
+        classifications,
+        expected,
+        "tabular visitor should collect molecular formula evidence for every column"
+    );
+
+    Ok(())
+}
 }
