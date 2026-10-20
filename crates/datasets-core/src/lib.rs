@@ -8,18 +8,18 @@ mod classifier;
 mod content;
 /// Error handling
 mod error;
+/// JSON data traversal and inspection.
+mod json;
 /// Labeling dataset item requirements
 mod labeler;
 /// Built-in scientific content labelers.
 mod labels;
 /// Tabular data traversal and inspection.
 mod tabular;
-/// JSON data traversal and inspection.
-mod json;
 /// Defines visitor functionality
 mod visitor;
 
-
-pub use content::ContentType;
 pub use classification::Classification;
+pub use classifier::{ArtifactFormat, classify_artifact};
+pub use content::ContentType;
 pub use error::CoreError;

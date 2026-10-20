@@ -1,13 +1,11 @@
-use crate::{ContentType, labeler::Labeler};
-
 use super::{
-    Classification,
-    CoreError,
-    labels::{MolecularFormulaLabeler, SmilesLabeler},
+    Classification, CoreError,
     json::JsonVisitor,
+    labels::{MolecularFormulaLabeler, SmilesLabeler},
     tabular::TabularVisitor,
     visitor::Visitor,
 };
+use crate::{ContentType, labeler::Labeler};
 
 /// Structure of an artifact being inspected.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -18,7 +16,7 @@ pub enum ArtifactFormat {
     Json,
 }
 
-/// Classifies an artifact using all supported scientific labelers.
+/// Classifies an artifact for the requested scientific content types.
 ///
 /// # Errors
 ///
@@ -32,20 +30,10 @@ pub fn classify_artifact(
 
     for content_type in content_types {
         let results = match content_type {
-            ContentType::Smiles => {
-                classify_with_labeler(
-                    data,
-                    format,
-                    &SmilesLabeler,
-                )?
-            }
+            ContentType::Smiles => classify_with_labeler(data, format, &SmilesLabeler)?,
 
             ContentType::MolecularFormula => {
-                classify_with_labeler(
-                    data,
-                    format,
-                    &MolecularFormulaLabeler,
-                )?
+                classify_with_labeler(data, format, &MolecularFormulaLabeler)?
             }
         };
 
@@ -55,10 +43,14 @@ pub fn classify_artifact(
     Ok(classifications)
 }
 
+/// Classifies an artifact using a single scientific labeler.
+///
+/// # Errors
+/// - Returns [`CoreError`] if the artifact cannot be inspected.
 fn classify_with_labeler<L: Labeler>(
     data: &[u8],
     format: ArtifactFormat,
-    labeler: &L
+    labeler: &L,
 ) -> Result<Vec<Classification>, CoreError> {
     match format {
         ArtifactFormat::Tabular => TabularVisitor::visit(data, labeler),
@@ -68,8 +60,8 @@ fn classify_with_labeler<L: Labeler>(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
     use super::*;
-
     #[test]
     fn classifies_tabular_artifact_for_requested_content_types() -> Result<(), CoreError> {
         let csv = "\
@@ -82,10 +74,7 @@ broken,C(,garbage
         let classifications = classify_artifact(
             csv.as_bytes(),
             ArtifactFormat::Tabular,
-            &[
-                ContentType::Smiles,
-                ContentType::MolecularFormula,
-            ],
+            &[ContentType::Smiles, ContentType::MolecularFormula],
         )?;
 
         assert!(
@@ -119,11 +108,8 @@ ethanol,CCO,C2H6O
 water,O,H2O
 ";
 
-        let classifications = classify_artifact(
-            csv.as_bytes(),
-            ArtifactFormat::Tabular,
-            &[ContentType::Smiles],
-        )?;
+        let classifications =
+            classify_artifact(csv.as_bytes(), ArtifactFormat::Tabular, &[ContentType::Smiles])?;
 
         assert!(
             classifications

@@ -1,45 +1,36 @@
-use std::{
-    collections::BTreeMap,
-    io::Read
-};
+use std::{collections::BTreeMap, io::Read};
 
 use serde_json::Value;
 
-use super::{
-    Classification,
-    CoreError,
-    labeler::Labeler,
-    visitor::Visitor
-};
+use super::{Classification, CoreError, labeler::Labeler, visitor::Visitor};
 
 /// Visits JSON dataset content.
 pub struct JsonVisitor;
 
 impl Visitor for JsonVisitor {
     /// Inspects JSON data using the provided scientific labeler.
-    /// 
+    ///
     /// # Errors
     /// - Returns [`CoreError`] when the JSON input cannot be parsed
     fn visit<R: Read, L: Labeler>(
         reader: R,
-        labeler: &L
+        labeler: &L,
     ) -> Result<Vec<Classification>, CoreError> {
         let value: Value = serde_json::from_reader(reader)?;
 
         let mut evidence = BTreeMap::new();
 
-        visit_value(
-            &value,
-            "$",
-            labeler,
-            &mut evidence
-        );
-        Ok(evidence.into_iter().map(|(location, (inspected, valid))| {
-            Classification::new(labeler.content_type(), location, inspected, valid)
-        }).collect())
+        visit_value(&value, "$", labeler, &mut evidence);
+        Ok(evidence
+            .into_iter()
+            .map(|(location, (inspected, valid))| {
+                Classification::new(labeler.content_type(), location, inspected, valid)
+            })
+            .collect())
     }
 }
 
+/// Recursively visits JSON values and accumulates evidence by location
 fn visit_value<L: Labeler>(
     value: &Value,
     location: &str,
@@ -51,12 +42,7 @@ fn visit_value<L: Labeler>(
             for (key, value) in object {
                 let child_location = format!("{location}.{key}");
 
-                visit_value(
-                    value,
-                    &child_location,
-                    labeler,
-                    evidence,
-                );
+                visit_value(value, &child_location, labeler, evidence);
             }
         }
 
@@ -64,12 +50,7 @@ fn visit_value<L: Labeler>(
             let child_location = format!("{location}[]");
 
             for value in values {
-                visit_value(
-                    value,
-                    &child_location,
-                    labeler,
-                    evidence,
-                );
+                visit_value(value, &child_location, labeler, evidence);
             }
         }
 
@@ -78,8 +59,7 @@ fn visit_value<L: Labeler>(
                 return;
             }
 
-            let (inspected, valid) =
-                evidence.entry(location.to_owned()).or_default();
+            let (inspected, valid) = evidence.entry(location.to_owned()).or_default();
 
             *inspected += 1;
 
@@ -94,11 +74,9 @@ fn visit_value<L: Labeler>(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
     use super::*;
-    use crate::{
-        ContentType::Smiles,
-        labels::SmilesLabeler,
-    };
+    use crate::{ContentType::Smiles, labels::SmilesLabeler};
 
     #[test]
     fn visits_json_string_locations() -> Result<(), CoreError> {
@@ -126,33 +104,16 @@ mod tests {
         }
         "#;
 
-        let classifications =
-            JsonVisitor::visit(json.as_bytes(), &SmilesLabeler)?;
+        let classifications = JsonVisitor::visit(json.as_bytes(), &SmilesLabeler)?;
 
         let expected = vec![
-            Classification::new(
-                Smiles,
-                "$.canonical_smiles[]",
-                3,
-                2,
-            ),
-            Classification::new(
-                Smiles,
-                "$.compounds[].name",
-                3,
-                0,
-            ),
-            Classification::new(
-                Smiles,
-                "$.compounds[].smiles",
-                3,
-                2,
-            ),
+            Classification::new(Smiles, "$.canonical_smiles[]", 3, 2),
+            Classification::new(Smiles, "$.compounds[].name", 3, 0),
+            Classification::new(Smiles, "$.compounds[].smiles", 3, 2),
         ];
 
         assert_eq!(
-            classifications,
-            expected,
+            classifications, expected,
             "JSON visitor should accumulate evidence by normalized JSON location"
         );
 

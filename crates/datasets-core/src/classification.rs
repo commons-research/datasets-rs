@@ -9,14 +9,20 @@ pub struct Classification {
     location: String,
     /// Number of entries inspected total
     inspected: usize,
-    /// Number of entries that contain a valid instance of the sought `ContentType`
+    /// Number of entries that contain a valid instance of the sought
+    /// `ContentType`
     valid: usize,
 }
 
 impl Classification {
     /// Creates a new classification
     #[must_use]
-    pub fn new(content_type: ContentType, location: impl Into<String>, inspected: usize, valid: usize) -> Self {
+    pub fn new(
+        content_type: ContentType,
+        location: impl Into<String>,
+        inspected: usize,
+        valid: usize,
+    ) -> Self {
         Self { content_type, location: location.into(), inspected, valid }
     }
     /// Returns the `ContentType`
@@ -43,10 +49,6 @@ impl Classification {
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
     pub const fn valid_ratio(&self) -> Option<f64> {
-        if self.inspected == 0 {
-            None
-        } else {
-            Some(self.valid as f64 / self.inspected as f64)
-        }
+        if self.inspected == 0 { None } else { Some(self.valid as f64 / self.inspected as f64) }
     }
 }

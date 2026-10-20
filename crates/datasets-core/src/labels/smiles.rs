@@ -1,7 +1,6 @@
 use smiles_rs::Smiles;
 
-use super::super::{labeler::Labeler, content::ContentType};
-
+use super::super::{content::ContentType, labeler::Labeler};
 
 /// Structure for evaluating and labeling SMILES values
 pub struct SmilesLabeler;
