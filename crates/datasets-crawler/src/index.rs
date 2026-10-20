@@ -58,7 +58,7 @@ impl IndexedArtifact {
 pub struct DatasetIndex {
     /// The indexed artifacts
     artifacts: Vec<IndexedArtifact>,
-    /// Content type hashmap 
+    /// Content type hashmap pointing to artifact indices
     by_content_type: HashMap<ContentType, Vec<usize>>
 }
 
@@ -79,5 +79,14 @@ impl DatasetIndex {
             self.by_content_type.entry(content_type).or_default().push(artifact_index);
         }
         self.artifacts.push(artifact);
+    }
+
+    /// Returns artifacts with at least one valid instance of the sought content type
+    #[must_use]
+    pub fn search(
+        &self,
+        content_type: ContentType,
+    ) -> impl Iterator<Item = &IndexedArtifact> + '_ {
+        self.by_content_type.get(&content_type).into_iter().flatten().map(|&index| &self.artifacts[index])
     }
 }
