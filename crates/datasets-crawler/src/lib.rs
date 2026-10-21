@@ -6,7 +6,7 @@ mod index;
 /// Crawler implementation for crawling datasets for evaluation
 mod crawler;
 
-/// Specific implementations for existing data lakes to crawl
+/// Implementations for external dataset sources
 mod sources;
 
 pub use crawler::{CandidateArtifact, Crawler};

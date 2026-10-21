@@ -3,6 +3,7 @@
 #![allow(clippy::print_stdout)]
 use datasets_core::ContentType;
 use datasets_crawler::HuggingFaceSource;
+use hf_hub::repository::RepoTreeEntry;
 
 /// Main entry point for the crawler application
 ///
@@ -17,8 +18,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let query = ContentType::Smiles.to_string();
     let datasets = source.search(&query, 10).await?;
 
-    for dataset in datasets {
-        println!("{}", dataset.id);
+    let Some(dataset) = datasets.first() else {
+        println!("No datasets found.");
+        return Ok(());
+    };
+
+    println!("Dataset: {}", dataset.id);
+
+    let entries = source.list_tree(&dataset.id, 50000).await?;
+    
+    for entry in entries {
+        if let RepoTreeEntry::File { path, size, .. } = entry {
+            println!("{path} ({size} bytes)");
+        }
     }
 
     Ok(())
