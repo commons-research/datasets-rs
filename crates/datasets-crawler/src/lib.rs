@@ -11,3 +11,4 @@ mod sources;
 
 pub use crawler::{CandidateArtifact, Crawler};
 pub use index::{DatasetIndex, IndexedArtifact};
+pub use sources::HuggingFaceSource;
