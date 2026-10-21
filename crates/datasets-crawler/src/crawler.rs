@@ -5,10 +5,15 @@ use super::{DatasetIndex, IndexedArtifact};
 /// An artifact discovered by a dataset source for inspection
 #[derive(Debug, Clone)]
 pub struct CandidateArtifact {
+    /// Stable identifier of the parent dataset
     dataset_id: String,
+    /// URL of the parent dataset
     dataset_url: String,
+    /// Reference identifying this artifact within the dataset
     artifact_ref: String,
+    /// Structural format of the artifact
     format: ArtifactFormat,
+    /// Raw artifact data to classify
     data: Vec<u8>,
 }
 
@@ -35,7 +40,9 @@ impl CandidateArtifact {
 /// Classifies discovered artifacts and contributes them to index
 #[derive(Debug)]
 pub struct Crawler {
+    /// Scientific content types sought
     content_types: Vec<ContentType>,
+    /// In-memory index populated with classified artifacts
     index: DatasetIndex,
 }
 
@@ -107,9 +114,6 @@ broken,C(,garbage
 
         let smiles_matches: Vec<_> = crawler.index().search(ContentType::Smiles).collect();
 
-        let formula_matches: Vec<_> =
-            crawler.index().search(ContentType::MolecularFormula).collect();
-
         assert_eq!(
             smiles_matches.len(),
             1,
@@ -117,7 +121,7 @@ broken,C(,garbage
         );
 
         assert_eq!(
-            formula_matches.len(),
+            crawler.index().search(ContentType::MolecularFormula).count(),
             1,
             "crawler should index the artifact as containing molecular formulae"
         );

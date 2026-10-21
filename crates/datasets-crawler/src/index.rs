@@ -5,9 +5,13 @@ use datasets_core::{Classification, ContentType};
 /// An artifact and its scientific classification evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedArtifact {
+    /// Stable identifier of the parent dataset
     dataset_id: String,
+    /// URL of the parent dataset
     dataset_url: String,
+    /// Reference identifying this artifact within the dataset
     artifact_ref: String,
+    /// Scientific classification evidence collected for this artifact
     classifications: Vec<Classification>,
 }
 
@@ -88,7 +92,6 @@ impl DatasetIndex {
 
     /// Returns artifacts with at least one valid instance of the sought content
     /// type
-    #[must_use]
     pub fn search(&self, content_type: ContentType) -> impl Iterator<Item = &IndexedArtifact> + '_ {
         self.by_content_type
             .get(&content_type)
@@ -129,10 +132,9 @@ mod tests {
         ));
 
         let smiles_matches: Vec<_> = index.search(ContentType::Smiles).collect();
-        let formula_matches: Vec<_> = index.search(ContentType::MolecularFormula).collect();
 
         assert_eq!(smiles_matches.len(), 1);
-        assert_eq!(formula_matches.len(), 1);
+        assert_eq!(index.search(ContentType::MolecularFormula).count(), 1);
 
         assert_eq!(smiles_matches[0].dataset_id(), "example-dataset");
         assert_eq!(smiles_matches[0].artifact_ref(), "data.csv");
