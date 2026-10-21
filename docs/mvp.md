@@ -36,6 +36,17 @@ The MVP should establish a core architecture for crawling datasets, determining 
 [x] index
 [x] crawler
 [ ] Hugging Face
+    [x] source/client implementation
+    [x] bounded dataset search
+    [x] search by scientific term
+    [ ] optional Hub tag/filter support
+    [ ] repository tree inspection
+    [ ] identify supported artifacts (.csv / .json)
+    [ ] reject oversized artifacts before download
+    [ ] download supported artifact
+    [ ] convert to CandidateArtifact
+    [ ] classify + index through Crawler
+    [ ] live end-to-end smoke test
 [ ] Zenodo
 [ ] evaluation
 
