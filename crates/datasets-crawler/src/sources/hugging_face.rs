@@ -1,5 +1,9 @@
 use futures::TryStreamExt;
-use hf_hub::{HFClient, HFResult, repository::{DatasetInfo, RepoTreeEntry}, split_id};
+use hf_hub::{
+    HFClient, HFResult,
+    repository::{DatasetInfo, RepoTreeEntry},
+    split_id,
+};
 
 /// Structure for discovering datasets hosted on Hugging Face
 pub struct HuggingFaceSource {
@@ -25,14 +29,20 @@ impl HuggingFaceSource {
     }
 
     /// Lists entries contained within a Hugging Face dataset repository
-    /// 
+    ///
     /// # Errors
     /// - Returns an error if repo tree cannot be retrieved
-    pub async fn list_tree(
-        &self, dataset_id: &str, limit: usize,
-    ) -> HFResult<Vec<RepoTreeEntry>> {
-        let (owner,name) = split_id(dataset_id);
+    pub async fn list_tree(&self, dataset_id: &str, limit: usize) -> HFResult<Vec<RepoTreeEntry>> {
+        let (owner, name) = split_id(dataset_id);
 
-        self.client.dataset(owner, name).list_tree().recursive(true).expand(true).limit(limit).send()?.try_collect().await
+        self.client
+            .dataset(owner, name)
+            .list_tree()
+            .recursive(true)
+            .expand(true)
+            .limit(limit)
+            .send()?
+            .try_collect()
+            .await
     }
 }

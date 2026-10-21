@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Dataset: {}", dataset.id);
 
     let entries = source.list_tree(&dataset.id, 50000).await?;
-    
+
     for entry in entries {
         if let RepoTreeEntry::File { path, size, .. } = entry {
             println!("{path} ({size} bytes)");
