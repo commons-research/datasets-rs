@@ -77,3 +77,53 @@ impl Crawler {
         &self.index
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
+    use super::*;
+
+    #[test]
+    fn processes_artifact_into_searchable_index() -> Result<(), CoreError> {
+        let csv = "\
+name,structure,formula
+ethanol,CCO,C2H6O
+water,O,H2O
+broken,C(,garbage
+";
+
+        let artifact = CandidateArtifact::new(
+            "example-dataset",
+            "https://example.org/datasets/example",
+            "data.csv",
+            ArtifactFormat::Tabular,
+            csv.as_bytes().to_vec(),
+        );
+
+        let mut crawler = Crawler::new(&[ContentType::Smiles, ContentType::MolecularFormula]);
+
+        crawler.process(artifact)?;
+
+        let smiles_matches: Vec<_> = crawler.index().search(ContentType::Smiles).collect();
+
+        let formula_matches: Vec<_> =
+            crawler.index().search(ContentType::MolecularFormula).collect();
+
+        assert_eq!(
+            smiles_matches.len(),
+            1,
+            "crawler should index the artifact as containing SMILES"
+        );
+
+        assert_eq!(
+            formula_matches.len(),
+            1,
+            "crawler should index the artifact as containing molecular formulae"
+        );
+
+        assert_eq!(smiles_matches[0].dataset_id(), "example-dataset");
+
+        Ok(())
+    }
+}
