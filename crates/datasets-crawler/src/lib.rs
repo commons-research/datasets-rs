@@ -3,4 +3,7 @@
 /// Indexes artifact records
 mod index;
 
+/// Crawler implementation for crawling datasets for evaluation
+mod crawler;
+
 pub use index::{DatasetIndex, IndexedArtifact};
