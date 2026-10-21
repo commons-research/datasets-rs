@@ -13,8 +13,8 @@ pub enum ContentType {
 impl fmt::Display for ContentType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ContentType::Smiles => f.write_str("smiles"),
-            ContentType::MolecularFormula => f.write_str("molecular formula"),
+            Self::Smiles => f.write_str("smiles"),
+            Self::MolecularFormula => f.write_str("molecular formula"),
         }
     }
 }
