@@ -1,9 +1,19 @@
 //! Web crawler dataset evaluation application runtime
 
-#![allow(clippy::print_stdout)]
-use datasets_core::ContentType;
-use datasets_crawler::HuggingFaceSource;
-use hf_hub::repository::RepoTreeEntry;
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+use std::{
+    collections::HashSet,
+    error::Error,
+    fs,
+    path::Path
+}
+use clap::{Parser,ValueEnum};
+use datasets_core::{ArtifactFormat, ContentType};
+use datasets_crawler::{CandidateArtifact, Crawler, DatasetIndex, HuggingFaceSource};
+use hf_hub::repository::{DatasetInfo, RepoTreeEntry};
+/// Command Line Interface settings for the crawler
+mod cli;
+
 
 /// Main entry point for the crawler application
 ///

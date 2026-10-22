@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use futures::TryStreamExt;
 use hf_hub::{
     HFClient, HFResult,
@@ -44,5 +45,18 @@ impl HuggingFaceSource {
             .send()?
             .try_collect()
             .await
+    }
+
+    /// Downloads single file from a dataset repository
+    /// 
+    /// # Errors
+    /// - Returns an error if file cannot be downloaded
+    pub async fn download_file(
+        &self,
+        dataset_id: &str,
+        path: &str,
+    ) -> HFResult<PathBuf> {
+        let (owner,name) = split_id(dataset_id);
+        self.client.dataset(owner, name).download_file().filename(path).send().await
     }
 }
