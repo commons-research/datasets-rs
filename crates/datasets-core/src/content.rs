@@ -65,70 +65,53 @@ impl FromStr for ContentType {
                 Ok(Self::MolecularFormula)
             }
 
-            _ => Err(CoreError::ParseContentTypeError {
-                value: value.to_owned(),
-            }),
+            _ => Err(CoreError::ParseContentTypeError { value: value.to_owned() }),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ContentType;
+    use crate::{ContentType, CoreError::ParseContentTypeError};
 
+    #[test]
+    fn first_term_is_the_canonical_search_term() {
+        assert_eq!(
+            ContentType::Smiles.terms().first().copied(),
+            Some("smiles"),
+            "SMILES should use its display term as its primary search term"
+        );
 
-    #[cfg(test)]
-    mod tests {
-        use super::super::ContentType;
+        assert_eq!(
+            ContentType::MolecularFormula.terms().first().copied(),
+            Some("molecular formula"),
+            "molecular formula should use its display term as its primary search term"
+        );
+    }
 
-        #[test]
-        fn first_term_is_the_canonical_search_term() {
-            assert_eq!(
-                ContentType::Smiles.terms().first().copied(),
-                Some("smiles"),
-                "SMILES should use its display term as its primary search term"
+    #[test]
+    fn all_content_types_have_nonempty_search_terms() {
+        for content_type in [ContentType::Smiles, ContentType::MolecularFormula] {
+            let terms = content_type.terms();
+
+            assert!(!terms.is_empty(), "every content type should have at least one search term");
+
+            assert!(
+                terms.iter().all(|term| !term.trim().is_empty()),
+                "search terms should not be empty"
             );
-
-            assert_eq!(
-                ContentType::MolecularFormula.terms().first().copied(),
-                Some("molecular formula"),
-                "molecular formula should use its display term as its primary search term"
-            );
-        }
-
-        #[test]
-        fn all_content_types_have_nonempty_search_terms() {
-            for content_type in [ContentType::Smiles, ContentType::MolecularFormula] {
-                let terms = content_type.terms();
-
-                assert!(
-                    !terms.is_empty(),
-                    "every content type should have at least one search term"
-                );
-
-                assert!(
-                    terms.iter().all(|term| !term.trim().is_empty()),
-                    "search terms should not be empty"
-                );
-            }
         }
     }
 
     #[test]
-fn parses_content_types() {
-    let smiles = "smiles".parse::<ContentType>().unwrap();
-    assert_eq!(
-        smiles,
-        ContentType::Smiles
-    );
-    let mol_form = "molecular_formula".parse::<ContentType>().unwrap();
-    assert_eq!(
-        mol_form,
-        ContentType::MolecularFormula);
+    fn parses_content_types() {
+        assert!(matches!("smiles".parse::<ContentType>(), Ok(ContentType::Smiles)));
 
-    assert!(
-        "bullshit".parse::<ContentType>().is_err(),
-        "unsupported content types should fail parsing"
-    );
-}
+        assert!(matches!(
+            "molecular_formula".parse::<ContentType>(),
+            Ok(ContentType::MolecularFormula)
+        ));
+
+        assert!(matches!("bullshit".parse::<ContentType>(), Err(ParseContentTypeError { .. })));
+    }
 }

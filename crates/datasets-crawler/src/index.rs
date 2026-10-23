@@ -150,7 +150,7 @@ mod tests {
             "search results should preserve all classification evidence"
         );
 
-        assert_eq!(index.artifacts().count(),2, "index should retain both matches and non matches")
+        assert_eq!(index.artifacts().count(), 2, "index should retain both matches and non matches")
     }
 
     #[test]
