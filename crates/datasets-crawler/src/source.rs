@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use super::error::CrawlerError;
 
 /// Metadata describing dataset discovered in public repo

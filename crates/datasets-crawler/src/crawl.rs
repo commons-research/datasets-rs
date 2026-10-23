@@ -1,4 +1,4 @@
-use std::{collections::HashSet, error::Error, path::Path};
+use std::{collections::HashSet, path::Path};
 
 use datasets_core::{ArtifactFormat, ContentType};
 
@@ -118,6 +118,9 @@ pub async fn crawl<S: DatasetSource>(
 }
 
 /// Searches for datasets using the configured scientific search terms.
+///
+/// # Errors
+/// - Returns [`CrawlerError`] if unable to search for datasets
 async fn discover_datasets<S: DatasetSource>(
     source: &S,
     config: &CrawlConfig,

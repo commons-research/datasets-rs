@@ -567,6 +567,7 @@ dependencies = [
  "molecular-formulas 0.3.0",
  "serde_json",
  "smiles-rs",
+ "thiserror",
 ]
 
 [[package]]
@@ -577,6 +578,7 @@ dependencies = [
  "datasets-core",
  "futures",
  "hf-hub",
+ "thiserror",
  "tokio",
 ]
 

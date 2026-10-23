@@ -2,7 +2,7 @@
 name = "datasets-crawler"
 description = "Web dataset crawler library and application"
 keywords = ["dataset", "evaluation", "science", "open science"]
-categories = ["open science", "data","big data","data processing"]
+categories = ["open science", "data", "big data", "data processing"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,11 +10,11 @@ repository.workspace = true
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive", "env"] }
-datasets-core = {path = "../datasets-core"}
+datasets-core = { path = "../datasets-core" }
 futures = "0.3.34"
 hf-hub = "1.0.0"
 tokio = { version = "1.54.0", features = ["fs", "macros", "rt-multi-thread"] }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true
-

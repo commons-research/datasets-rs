@@ -8,7 +8,7 @@ use datasets_core::{ArtifactFormat, ContentType};
     version,
     about = "Discover and classify scientific datasets on public repositories"
 )]
-pub(crate) struct Args {
+pub struct Args {
     /// Dataset source to search.
     #[arg(long, value_enum, default_value = "hf", env = "DATASETS_CRAWLER_SOURCE")]
     pub(crate) source: SourceArg,
@@ -76,7 +76,7 @@ impl Args {
 
 /// Dataset source selected by the CLI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub(crate) enum SourceArg {
+pub enum SourceArg {
     /// Hugging Face Hub.
     #[value(name = "hf")]
     HuggingFace,
@@ -84,7 +84,7 @@ pub(crate) enum SourceArg {
 
 /// Supported file formats selected by the CLI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub(crate) enum FileFormatArg {
+pub enum FileFormatArg {
     /// Comma-separated values.
     Csv,
     /// JSON.

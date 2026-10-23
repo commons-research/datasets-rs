@@ -1,8 +1,6 @@
-use std::error::Error;
-
 use futures::TryStreamExt;
 use hf_hub::{
-    HFClient, HFResult,
+    HFClient,
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
@@ -87,7 +85,7 @@ impl DatasetSource for HuggingFaceSource {
                     RepoTreeEntry::File { path, size, .. } => {
                         Some(SourceArtifact { path, size_bytes: size })
                     }
-                    _ => None,
+                    RepoTreeEntry::Directory { .. } => None,
                 }
             })
             .collect())

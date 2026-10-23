@@ -2,8 +2,6 @@
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
-use std::error::Error;
-
 use datasets_core::ContentType;
 use datasets_crawler::{CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, crawl};
 
@@ -16,6 +14,9 @@ use cli::{Args, FileFormatArg, SourceArg};
 ///
 /// # Errors
 /// - Returns an error if initialization or dataset discovery fails.
+///
+/// # Panics
+/// - May panic
 #[tokio::main]
 async fn main() -> Result<(), CrawlerError> {
     let args = Args::parse_args();
