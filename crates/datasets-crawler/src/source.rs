@@ -1,4 +1,5 @@
 use std::error::Error;
+
 use super::error::CrawlerError;
 
 /// Metadata describing dataset discovered in public repo
@@ -31,9 +32,7 @@ pub trait DatasetSource: Send + Sync {
         &'a self,
         query: &'a str,
         limit: usize,
-    ) -> impl Future<
-        Output = Result<Vec<DatasetSummary>, CrawlerError>,
-    > + Send + 'a;
+    ) -> impl Future<Output = Result<Vec<DatasetSummary>, CrawlerError>> + Send + 'a;
 
     /// Lists files available in dataset
     ///
@@ -43,19 +42,15 @@ pub trait DatasetSource: Send + Sync {
         &'a self,
         dataset_id: &'a str,
         limit: usize,
-    ) -> impl Future<
-        Output = Result<Vec<SourceArtifact>, CrawlerError>,
-    > + Send + 'a;
+    ) -> impl Future<Output = Result<Vec<SourceArtifact>, CrawlerError>> + Send + 'a;
 
     /// Downloads an artifact and returns content
     ///
     /// # Errors
     /// - Returns error if artifact cannot be retrieved
     fn download_artifact<'a>(
-            &'a self,
-            dataset_id: &'a str,
-            artifact: &'a SourceArtifact,
-        ) -> impl Future<
-            Output = Result<Vec<u8>, CrawlerError>,
-        > + Send + 'a;
+        &'a self,
+        dataset_id: &'a str,
+        artifact: &'a SourceArtifact,
+    ) -> impl Future<Output = Result<Vec<u8>, CrawlerError>> + Send + 'a;
 }

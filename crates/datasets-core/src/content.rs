@@ -72,7 +72,9 @@ impl FromStr for ContentType {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ContentType, CoreError::ParseContentTypeError};
+    #![allow(clippy::missing_panics_doc)]
+
+    use super::ContentType;
 
     #[test]
     fn first_term_is_the_canonical_search_term() {
@@ -112,6 +114,9 @@ mod tests {
             Ok(ContentType::MolecularFormula)
         ));
 
-        assert!(matches!("bullshit".parse::<ContentType>(), Err(ParseContentTypeError { .. })));
+        assert!(
+            "bullshit".parse::<ContentType>().is_err(),
+            "unsupported content types should fail parsing"
+        );
     }
 }

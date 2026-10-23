@@ -4,14 +4,14 @@
 mod crawl;
 /// Crawler implementation for classifying discovered artifacts.
 mod crawler;
+/// Crawler error definitions
+mod error;
 /// Indexes classified artifact records.
 mod index;
 /// Common interface for remote dataset sources.
 mod source;
 /// Implementations for external dataset sources.
 mod sources;
-/// Crawler error definitions
-mod error;
 
 pub use crawl::{CrawlConfig, CrawlReport, crawl};
 pub use crawler::{CandidateArtifact, Crawler};

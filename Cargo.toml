@@ -10,6 +10,7 @@ license = "Apache-2.0"
 repository = "https://github.com/commons-research/datasets-rs"
 
 [workspace.dependencies]
+thiserror = "2.0.21"
 
 
 [workspace.lints.rust]

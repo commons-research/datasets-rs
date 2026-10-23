@@ -7,7 +7,10 @@ use hf_hub::{
     split_id,
 };
 
-use super::super::{source::{DatasetSource, DatasetSummary, SourceArtifact}, error::CrawlerError};
+use super::super::{
+    error::CrawlerError,
+    source::{DatasetSource, DatasetSummary, SourceArtifact},
+};
 
 /// Structure for discovering datasets hosted on Hugging Face
 pub struct HuggingFaceSource {
@@ -26,7 +29,7 @@ impl HuggingFaceSource {
 }
 
 impl DatasetSource for HuggingFaceSource {
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, Self::Error> {
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, CrawlerError> {
         let datasets: Vec<DatasetInfo> =
             self.client.list_datasets().search(query).limit(limit).send()?.try_collect().await?;
 
@@ -63,7 +66,7 @@ impl DatasetSource for HuggingFaceSource {
         &self,
         dataset_id: &str,
         limit: usize,
-    ) -> Result<Vec<SourceArtifact>, Self::Error> {
+    ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
 
         let entries: Vec<RepoTreeEntry> = self
@@ -94,7 +97,7 @@ impl DatasetSource for HuggingFaceSource {
         &self,
         dataset_id: &str,
         artifact: &SourceArtifact,
-    ) -> Result<Vec<u8>, Self::Error> {
+    ) -> Result<Vec<u8>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
 
         let cached_path = self
