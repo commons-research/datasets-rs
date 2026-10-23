@@ -1,4 +1,5 @@
 use clap::{Parser,ValueEnum};
+use datasets_core::{ArtifactFormat, ContentType};
 
 /// CLI config for dataset crawler
 #[derive(Debug, Parser)]
@@ -7,58 +8,124 @@ use clap::{Parser,ValueEnum};
     version,
     about = "Discover and classify scientific datasets on public repositories"
 )]
-struct Args {
-    /// Dataset source to search
-    #[arg(long, value_enum, default_value = "hf")]
-    source: SourceArg,
 
-    /// Scientific content types to seek (comma separated)
+
+pub(crate) struct Args {
+    /// Dataset source to search.
+    #[arg(
+        long,
+        value_enum,
+        default_value = "hf",
+        env = "DATASETS_CRAWLER_SOURCE"
+    )]
+    pub(crate) source: SourceArg,
+
+    /// Scientific content types to seek, comma separated.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_value = "smiles,molecular-formula",
+        env = "DATASETS_CRAWLER_CONTENT_TYPES"
+    )]
+    pub(crate) content_types: Vec<ContentType>,
+
+    /// File formats to inspect, comma separated.
     #[arg(
         long,
         value_enum,
         value_delimiter = ',',
-        default_value = "smiles,molecular-formula"
+        default_value = "csv,json",
+        env = "DATASETS_CRAWLER_FORMATS"
     )]
-    content_types: Vec<CliContentType>,
+    pub(crate) formats: Vec<FileFormatArg>,
 
-    /// File formats to inspect (comma separated)
-    #[arg(long, value_enum, value_delimiter = ',', default_value = "csv,json")]
-    formats: Vec<FileFormatArg>,
+    /// Use only the canonical search term for each content type.
+    #[arg(long, env = "DATASETS_CRAWLER_STRICT")]
+    pub(crate) strict: bool,
 
-    /// Use only canonical search term for content type
-    #[arg(long)]
-    strict: bool,
+    /// Require each additional term to occur in dataset metadata.
+    /// Repeat the option to require multiple terms.
+    #[arg(
+        long = "filter-term",
+        action = clap::ArgAction::Append,
+        value_delimiter = ',',
+        env = "DATASETS_CRAWLER_FILTER_TERMS"
+    )]
+    pub(crate) filter_terms: Vec<String>,
 
-    /// Require each additional term occur in dataset metadata (all terms must match)
-    #[arg(long = "filter-term", action = clap::ArgAction::Append)]
-    filter_terms: Vec<String>,
+    /// Maximum number of unique datasets to inspect.
+    #[arg(
+        long,
+        default_value_t = 50,
+        env = "DATASETS_CRAWLER_MAX_DATASETS"
+    )]
+    pub(crate) max_datasets: usize,
 
-    /// Max num of unique datasets to inspect
-    #[arg(long, default_value_t = 50)]
-    max_datasets: usize,
+    /// Maximum number of results returned per search term.
+    #[arg(
+        long,
+        default_value_t = 10,
+        env = "DATASETS_CRAWLER_RETURNS_PER_TERM"
+    )]
+    pub(crate) returns_per_term: usize,
 
-    /// Maximum number of results returned from each search term
-    #[arg(long, default_value_t = 10)]
-    returns_per_term: usize,
+    /// Maximum number of repository tree entries retrieved per dataset.
+    #[arg(
+        long,
+        default_value_t = 500,
+        env = "DATASETS_CRAWLER_MAX_TREE_ENTRIES"
+    )]
+    pub(crate) max_tree_entries: usize,
 
-    /// Max number of repo tree entries to retrieve per dataset
-    #[arg(long, default_value_t = 500)]
-    max_tree_entries: usize,
+    /// Maximum number of artifacts inspected per dataset.
+    #[arg(
+        long,
+        default_value_t = 10,
+        env = "DATASETS_CRAWLER_MAX_ARTIFACTS_PER_DATASET"
+    )]
+    pub(crate) max_artifacts_per_dataset: usize,
 
-    /// Max num of artifacts to inspect per dataset
-    #[arg(long, default_value_t = 10)]
-    max_artifacts_per_dataset: usize,
-
-    /// Max file size in decimal MB
-    #[arg(long, default_value_t = 10)]
-    max_file_size_mb: u64,
-
+    /// Maximum file size in decimal MB.
+    #[arg(
+        long,
+        default_value_t = 10,
+        env = "DATASETS_CRAWLER_MAX_FILE_SIZE_MB"
+    )]
+    pub(crate) max_file_size_mb: u64,
 }
 
+impl Args {
+    /// Parses crawler config from the CLI and ENV
+    #[must_use]
+    pub(crate) fn parse_args() -> Self {
+        Self::parse()
+    }
+}
+
+/// Repo source selected by CLI
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum SourceArg {
-    /// Hugging face 
+pub(crate) enum SourceArg {
+    /// Hugging Face Hub
     #[value(name = "hf")]
     HuggingFace,
 }
 
+/// File formats supported
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum FileFormatArg {
+    /// Comma-separated values
+    Csv,
+    /// JSON
+    Json,
+}
+
+impl FileFormatArg {
+    /// Converts selected file format to artifact format
+    #[must_use]
+    pub(crate) const fn artifact_format(self) -> ArtifactFormat {
+        match self {
+            FileFormatArg::Csv => ArtifactFormat::Tabular,
+            FileFormatArg::Json => ArtifactFormat::Json,
+        }
+    }
+}

@@ -7,13 +7,14 @@ use std::{
     fs,
     path::Path
 }
-use clap::{Parser,ValueEnum};
+use clap::Parser;
 use datasets_core::{ArtifactFormat, ContentType};
 use datasets_crawler::{CandidateArtifact, Crawler, DatasetIndex, HuggingFaceSource};
 use hf_hub::repository::{DatasetInfo, RepoTreeEntry};
 /// Command Line Interface settings for the crawler
 mod cli;
 
+use cli::{Args, FileFormatArg, SourceArg};
 
 /// Main entry point for the crawler application
 ///
@@ -24,23 +25,9 @@ mod cli;
 /// - Returns an error if unable to reach data source or work with the dataset
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let source = HuggingFaceSource::new()?;
-    let query = ContentType::Smiles.to_string();
-    let datasets = source.search(&query, 10).await?;
-
-    let Some(dataset) = datasets.first() else {
-        println!("No datasets found.");
-        return Ok(());
-    };
-
-    println!("Dataset: {}", dataset.id);
-
-    let entries = source.list_tree(&dataset.id, 50000).await?;
-
-    for entry in entries {
-        if let RepoTreeEntry::File { path, size, .. } = entry {
-            println!("{path} ({size} bytes)");
-        }
+    let args = Args::parse_args();
+    match args.source {
+        SourceArg::HuggingFace => crawl_hugging_face(&args).await?,
     }
 
     Ok(())

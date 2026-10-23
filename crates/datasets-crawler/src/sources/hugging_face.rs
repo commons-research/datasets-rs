@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::error::Error;
 
 use futures::TryStreamExt;
 use hf_hub::{
@@ -6,6 +6,7 @@ use hf_hub::{
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
+use super::super::source::{DatasetSource, DatasetSummary, SourceArtifact};
 
 /// Structure for discovering datasets hosted on Hugging Face
 pub struct HuggingFaceSource {
@@ -57,3 +58,4 @@ impl HuggingFaceSource {
         self.client.dataset(owner, name).download_file().filename(path).send().await
     }
 }
+
