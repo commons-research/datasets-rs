@@ -11,15 +11,15 @@ use datasets_core::{ArtifactFormat, ContentType};
 )]
 pub struct Args {
     /// Dataset source to search.
-    #[arg(long, env = "DATASETS_CRAWLER_SOURCE")]
+    #[arg(long, value_enum, env = "DATASETS_CRAWLER_SOURCE")]
     pub(crate) source: SourceArg,
 
     /// Scientific content types to seek, comma separated.
-    #[arg(long, value_delimiter = ',', env = "DATASETS_CRAWLER_CONTENT_TYPES")]
+    #[arg(long, value_delimiter = ',', required = true, env = "DATASETS_CRAWLER_CONTENT_TYPES")]
     pub(crate) content_types: Vec<ContentType>,
 
     /// File formats to inspect, comma separated.
-    #[arg(long, value_enum, value_delimiter = ',', env = "DATASETS_CRAWLER_FORMATS")]
+    #[arg(long, value_enum, value_delimiter = ',', required = true, env = "DATASETS_CRAWLER_FORMATS")]
     pub(crate) formats: Vec<FileFormatArg>,
 
     /// Use only canonical search terms.
