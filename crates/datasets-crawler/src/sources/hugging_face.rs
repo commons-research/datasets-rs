@@ -6,6 +6,7 @@ use hf_hub::{
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
+
 use super::super::source::{DatasetSource, DatasetSummary, SourceArtifact};
 
 /// Structure for discovering datasets hosted on Hugging Face
@@ -22,23 +23,53 @@ impl HuggingFaceSource {
     pub fn new() -> HFResult<Self> {
         Ok(Self { client: HFClient::new()? })
     }
+}
 
-    /// Searches HF for datasets matching provided query
-    ///
-    /// # Errors
-    /// - Returns an error if the HF Dataset listing(s) cannot be retrieved
-    pub async fn search(&self, query: &str, limit: usize) -> HFResult<Vec<DatasetInfo>> {
-        self.client.list_datasets().search(query).limit(limit).send()?.try_collect().await
+impl DatasetSource for HuggingFaceSource {
+    type Error = Box<dyn Error + Send + Sync>;
+
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, Self::Error> {
+        let datasets: Vec<DatasetInfo> =
+            self.client.list_datasets().search(query).limit(limit).send()?.try_collect().await?;
+
+        Ok(datasets
+            .into_iter()
+            .map(|dataset| {
+                let mut searchable_metadata = dataset.id.clone();
+
+                if let Some(description) = &dataset.description {
+                    searchable_metadata.push(' ');
+                    searchable_metadata.push_str(description);
+                }
+
+                if let Some(tags) = &dataset.tags {
+                    searchable_metadata.push(' ');
+                    searchable_metadata.push_str(&tags.join(" "));
+                }
+
+                if let Some(card_data) = &dataset.card_data {
+                    searchable_metadata.push(' ');
+                    searchable_metadata.push_str(&card_data.to_string());
+                }
+
+                DatasetSummary {
+                    url: format!("https://huggingface.co/datasets/{}", dataset.id),
+                    id: dataset.id,
+                    searchable_metadata,
+                }
+            })
+            .collect())
     }
 
-    /// Lists entries contained within a Hugging Face dataset repository
-    ///
-    /// # Errors
-    /// - Returns an error if repo tree cannot be retrieved
-    pub async fn list_tree(&self, dataset_id: &str, limit: usize) -> HFResult<Vec<RepoTreeEntry>> {
+    async fn list_artifacts(
+        &self,
+        dataset_id: &str,
+        limit: usize,
+    ) -> Result<Vec<SourceArtifact>, Self::Error> {
         let (owner, name) = split_id(dataset_id);
 
-        self.client
+        let entries: Vec<RepoTreeEntry> = self
+            .client
             .dataset(owner, name)
             .list_tree()
             .recursive(true)
@@ -46,16 +77,36 @@ impl HuggingFaceSource {
             .limit(limit)
             .send()?
             .try_collect()
-            .await
+            .await?;
+
+        Ok(entries
+            .into_iter()
+            .filter_map(|entry| {
+                match entry {
+                    RepoTreeEntry::File { path, size, .. } => {
+                        Some(SourceArtifact { path, size_bytes: size })
+                    }
+                    _ => None,
+                }
+            })
+            .collect())
     }
 
-    /// Downloads single file from a dataset repository
-    ///
-    /// # Errors
-    /// - Returns an error if file cannot be downloaded
-    pub async fn download_file(&self, dataset_id: &str, path: &str) -> HFResult<PathBuf> {
+    async fn download_artifact(
+        &self,
+        dataset_id: &str,
+        artifact: &SourceArtifact,
+    ) -> Result<Vec<u8>, Self::Error> {
         let (owner, name) = split_id(dataset_id);
-        self.client.dataset(owner, name).download_file().filename(path).send().await
+
+        let cached_path = self
+            .client
+            .dataset(owner, name)
+            .download_file()
+            .filename(artifact.path.clone())
+            .send()
+            .await?;
+
+        Ok(tokio::fs::read(cached_path).await?)
     }
 }
-

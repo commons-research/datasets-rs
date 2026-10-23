@@ -1,34 +1,81 @@
-//! Web crawler dataset evaluation application runtime
+//! Dataset crawler application entry point.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
-use std::{
-    collections::HashSet,
-    error::Error,
-    fs,
-    path::Path
-}
-use clap::Parser;
-use datasets_core::{ArtifactFormat, ContentType};
-use datasets_crawler::{CandidateArtifact, Crawler, DatasetIndex, HuggingFaceSource};
-use hf_hub::repository::{DatasetInfo, RepoTreeEntry};
-/// Command Line Interface settings for the crawler
+
+use std::error::Error;
+
+use datasets_core::ContentType;
+use datasets_crawler::{CrawlConfig, Crawler, HuggingFaceSource, crawl};
+
+/// Command-line configuration.
 mod cli;
 
 use cli::{Args, FileFormatArg, SourceArg};
 
-/// Main entry point for the crawler application
-///
-/// # Panics
-/// - Panics when encountering an error and returns it.
+/// Runs the dataset crawler.
 ///
 /// # Errors
-/// - Returns an error if unable to reach data source or work with the dataset
+/// - Returns an error if initialization or dataset discovery fails.
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse_args();
-    match args.source {
-        SourceArg::HuggingFace => crawl_hugging_face(&args).await?,
+    let selected_source = args.source;
+
+    let config = CrawlConfig {
+        content_types: args.content_types,
+        formats: args.formats.into_iter().map(FileFormatArg::artifact_format).collect(),
+        strict: args.strict,
+        filter_terms: args.filter_terms,
+        max_datasets: args.max_datasets,
+        results_per_term: args.returns_per_term,
+        max_tree_entries: args.max_tree_entries,
+        max_artifacts_per_dataset: args.max_artifacts_per_dataset,
+        max_file_size_bytes: args.max_file_size_mb.saturating_mul(1_000_000),
+    };
+
+    let report = match selected_source {
+        SourceArg::HuggingFace => {
+            let source = HuggingFaceSource::new()?;
+            crawl(&source, &config).await?
+        }
+    };
+
+    for warning in report.warnings() {
+        eprintln!("Warning: {warning}");
     }
 
+    print_results(report.crawler(), &config.content_types);
+
     Ok(())
+}
+
+/// Prints indexed artifacts and their classification evidence.
+fn print_results(crawler: &Crawler, content_types: &[ContentType]) {
+    for content_type in content_types {
+        println!("\nResults for {content_type}:");
+
+        let mut found = false;
+
+        for artifact in crawler.index().search(*content_type) {
+            found = true;
+
+            println!("- {} ({})", artifact.dataset_id(), artifact.dataset_url());
+            println!("  Artifact: {}", artifact.artifact_ref());
+
+            for classification in artifact.classifications().iter().filter(|classification| {
+                classification.content_type() == *content_type && classification.valid() > 0
+            }) {
+                println!(
+                    "  {}: {}/{} valid entries",
+                    classification.location(),
+                    classification.valid(),
+                    classification.inspected()
+                );
+            }
+        }
+
+        if !found {
+            println!("  No matching artifacts found.");
+        }
+    }
 }

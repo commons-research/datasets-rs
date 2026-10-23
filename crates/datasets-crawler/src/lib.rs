@@ -1,17 +1,18 @@
-//! Dataset crawler application and utilities
+//! Dataset crawler library and application utilities.
 
-/// Indexes artifact records
-mod index;
-
-/// Crawler implementation for crawling datasets for evaluation
+/// Shared discovery and crawling workflow.
+mod crawl;
+/// Crawler implementation for classifying discovered artifacts.
 mod crawler;
-
-/// Implementations for external dataset sources
-mod sources;
-/// Source metadata definitions and trait
+/// Indexes classified artifact records.
+mod index;
+/// Common interface for remote dataset sources.
 mod source;
+/// Implementations for external dataset sources.
+mod sources;
 
+pub use crawl::{CrawlConfig, CrawlReport, crawl};
 pub use crawler::{CandidateArtifact, Crawler};
 pub use index::{DatasetIndex, IndexedArtifact};
+pub use source::{DatasetSource, DatasetSummary, SourceArtifact};
 pub use sources::HuggingFaceSource;
-pub use source::{SourceArtifact, DatasetSummary, DatasetSource};
