@@ -1,4 +1,6 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
+
+use crate::CoreError;
 
 /// Scientific content type that may be detected within a dataset.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -52,8 +54,28 @@ impl fmt::Display for ContentType {
     }
 }
 
+impl FromStr for ContentType {
+    type Err = CoreError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "smiles" => Ok(Self::Smiles),
+
+            "molecular-formula" | "molecular_formula" | "molecular formula" => {
+                Ok(Self::MolecularFormula)
+            }
+
+            _ => Err(CoreError::ParseContentTypeError {
+                value: value.to_owned(),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::ContentType;
+
 
     #[cfg(test)]
     mod tests {
@@ -91,4 +113,22 @@ mod tests {
             }
         }
     }
+
+    #[test]
+fn parses_content_types() {
+    let smiles = "smiles".parse::<ContentType>().unwrap();
+    assert_eq!(
+        smiles,
+        ContentType::Smiles
+    );
+    let mol_form = "molecular_formula".parse::<ContentType>().unwrap();
+    assert_eq!(
+        mol_form,
+        ContentType::MolecularFormula);
+
+    assert!(
+        "bullshit".parse::<ContentType>().is_err(),
+        "unsupported content types should fail parsing"
+    );
+}
 }

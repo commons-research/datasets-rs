@@ -11,4 +11,11 @@ pub enum CoreError {
     /// JSON data could not be parsed
     #[error("failed to parse JSON data: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// Unsupported scientific content type parsed
+    #[error("unsupported content type: {value}")]
+    ParseContentTypeError {
+        /// Value not able to parse
+        value: String,
+    }
 }
