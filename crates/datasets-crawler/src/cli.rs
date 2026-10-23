@@ -19,7 +19,13 @@ pub struct Args {
     pub(crate) content_types: Vec<ContentType>,
 
     /// File formats to inspect, comma separated.
-    #[arg(long, value_enum, value_delimiter = ',', required = true, env = "DATASETS_CRAWLER_FORMATS")]
+    #[arg(
+        long,
+        value_enum,
+        value_delimiter = ',',
+        required = true,
+        env = "DATASETS_CRAWLER_FORMATS"
+    )]
     pub(crate) formats: Vec<FileFormatArg>,
 
     /// Use only canonical search terms.

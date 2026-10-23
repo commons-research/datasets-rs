@@ -9,16 +9,23 @@ use datasets_crawler::{CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, cr
 mod cli;
 
 use cli::{Args, FileFormatArg, SourceArg};
-
+use tokio::runtime::Builder;
 /// Runs the dataset crawler.
 ///
 /// # Errors
 /// - Returns an error if initialization or dataset discovery fails.
+fn main() -> Result<(), CrawlerError> {
+    let runtime =
+        Builder::new_multi_thread().enable_all().build().map_err(CrawlerError::Runtime)?;
+
+    runtime.block_on(run())
+}
+
+/// Executes crawler async
 ///
-/// # Panics
-/// - May panic on tokio runtime
-#[tokio::main]
-async fn main() -> Result<(), CrawlerError> {
+/// # Errors
+/// - Returns error if init or dataset search fails
+async fn run() -> Result<(), CrawlerError> {
     let args = Args::parse_args();
     let selected_source = args.source;
 

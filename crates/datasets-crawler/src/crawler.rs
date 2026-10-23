@@ -63,7 +63,7 @@ impl Crawler {
     /// Does the classifying and indexing of a discovered artifact
     ///
     /// # Errors
-    /// - Returns [`CoreError`] if the artifact cannot be classified
+    /// - Returns [`CrawlerError`] if the artifact cannot be classified
     pub fn process(&mut self, artifact: CandidateArtifact) -> Result<(), CrawlerError> {
         let classifications =
             classify_artifact(&artifact.data, artifact.format, &self.content_types)?;
