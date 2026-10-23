@@ -7,7 +7,7 @@ use hf_hub::{
     split_id,
 };
 
-use super::super::source::{DatasetSource, DatasetSummary, SourceArtifact};
+use super::super::{source::{DatasetSource, DatasetSummary, SourceArtifact}, error::CrawlerError};
 
 /// Structure for discovering datasets hosted on Hugging Face
 pub struct HuggingFaceSource {
@@ -20,14 +20,12 @@ impl HuggingFaceSource {
     ///
     /// # Errors
     /// - Returns error if HF Client cannot be created
-    pub fn new() -> HFResult<Self> {
+    pub fn new() -> Result<Self, CrawlerError> {
         Ok(Self { client: HFClient::new()? })
     }
 }
 
 impl DatasetSource for HuggingFaceSource {
-    type Error = Box<dyn Error + Send + Sync>;
-
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, Self::Error> {
         let datasets: Vec<DatasetInfo> =
             self.client.list_datasets().search(query).limit(limit).send()?.try_collect().await?;

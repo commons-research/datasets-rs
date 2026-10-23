@@ -1,4 +1,5 @@
 use std::error::Error;
+use super::error::CrawlerError;
 
 /// Metadata describing dataset discovered in public repo
 #[derive(Debug, Clone)]
@@ -21,34 +22,40 @@ pub struct SourceArtifact {
 }
 
 /// Operations required to discover and retrieve remote datasets
-#[allow(async_fn_in_trait)]
-pub trait DatasetSource {
-    /// Error type returned by source
-    type Error: Error + Send + Sync + 'static;
-
+pub trait DatasetSource: Send + Sync {
     /// Searches for datasets matching search term
     ///
     /// # Errors
     /// - Returns error if search fails
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, Self::Error>;
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        limit: usize,
+    ) -> impl Future<
+        Output = Result<Vec<DatasetSummary>, CrawlerError>,
+    > + Send + 'a;
 
     /// Lists files available in dataset
     ///
     /// # Errors
     /// - returns error if repo listing fails
-    async fn list_artifacts(
-        &self,
-        dataset_id: &str,
+    fn list_artifacts<'a>(
+        &'a self,
+        dataset_id: &'a str,
         limit: usize,
-    ) -> Result<Vec<SourceArtifact>, Self::Error>;
+    ) -> impl Future<
+        Output = Result<Vec<SourceArtifact>, CrawlerError>,
+    > + Send + 'a;
 
     /// Downloads an artifact and returns content
     ///
     /// # Errors
     /// - Returns error if artifact cannot be retrieved
-    async fn download_artifact(
-        &self,
-        dataset_id: &str,
-        artifact: &SourceArtifact,
-    ) -> Result<Vec<u8>, Self::Error>;
+    fn download_artifact<'a>(
+            &'a self,
+            dataset_id: &'a str,
+            artifact: &'a SourceArtifact,
+        ) -> impl Future<
+            Output = Result<Vec<u8>, CrawlerError>,
+        > + Send + 'a;
 }

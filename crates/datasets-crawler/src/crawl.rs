@@ -2,7 +2,7 @@ use std::{collections::HashSet, error::Error, path::Path};
 
 use datasets_core::{ArtifactFormat, ContentType};
 
-use crate::{CandidateArtifact, Crawler, DatasetSource, DatasetSummary};
+use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary};
 
 /// Configuration for a repository-independent crawl.
 #[derive(Debug, Clone)]
@@ -57,7 +57,7 @@ impl CrawlReport {
 pub async fn crawl<S: DatasetSource>(
     source: &S,
     config: &CrawlConfig,
-) -> Result<CrawlReport, Box<dyn Error + Send + Sync>> {
+) -> Result<CrawlReport, CrawlerError> {
     let datasets = discover_datasets(source, config).await?;
     let mut crawler = Crawler::new(&config.content_types);
     let mut warnings = Vec::new();
@@ -121,7 +121,7 @@ pub async fn crawl<S: DatasetSource>(
 async fn discover_datasets<S: DatasetSource>(
     source: &S,
     config: &CrawlConfig,
-) -> Result<Vec<DatasetSummary>, Box<dyn Error + Send + Sync>> {
+) -> Result<Vec<DatasetSummary>, CrawlerError> {
     if config.max_datasets == 0 {
         return Ok(Vec::new());
     }

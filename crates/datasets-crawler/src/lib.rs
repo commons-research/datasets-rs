@@ -10,9 +10,12 @@ mod index;
 mod source;
 /// Implementations for external dataset sources.
 mod sources;
+/// Crawler error definitions
+mod error;
 
 pub use crawl::{CrawlConfig, CrawlReport, crawl};
 pub use crawler::{CandidateArtifact, Crawler};
+pub use error::CrawlerError;
 pub use index::{DatasetIndex, IndexedArtifact};
 pub use source::{DatasetSource, DatasetSummary, SourceArtifact};
 pub use sources::HuggingFaceSource;

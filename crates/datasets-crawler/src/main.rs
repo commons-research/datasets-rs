@@ -5,7 +5,7 @@
 use std::error::Error;
 
 use datasets_core::ContentType;
-use datasets_crawler::{CrawlConfig, Crawler, HuggingFaceSource, crawl};
+use datasets_crawler::{CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, crawl};
 
 /// Command-line configuration.
 mod cli;
@@ -17,7 +17,7 @@ use cli::{Args, FileFormatArg, SourceArg};
 /// # Errors
 /// - Returns an error if initialization or dataset discovery fails.
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn main() -> Result<(), CrawlerError> {
     let args = Args::parse_args();
     let selected_source = args.source;
 
