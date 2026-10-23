@@ -6,30 +6,20 @@ use datasets_core::{ArtifactFormat, ContentType};
 #[command(
     name = "dataset-crawler",
     version,
-    about = "Discover and classify scientific datasets on public repositories"
+    about = "Discover and classify scientific datasets on public repositories",
+    arg_required_else_help = true
 )]
 pub struct Args {
     /// Dataset source to search.
-    #[arg(long, value_enum, default_value = "hf", env = "DATASETS_CRAWLER_SOURCE")]
+    #[arg(long, env = "DATASETS_CRAWLER_SOURCE")]
     pub(crate) source: SourceArg,
 
     /// Scientific content types to seek, comma separated.
-    #[arg(
-        long,
-        value_delimiter = ',',
-        default_value = "smiles,molecular-formula",
-        env = "DATASETS_CRAWLER_CONTENT_TYPES"
-    )]
+    #[arg(long, value_delimiter = ',', env = "DATASETS_CRAWLER_CONTENT_TYPES")]
     pub(crate) content_types: Vec<ContentType>,
 
     /// File formats to inspect, comma separated.
-    #[arg(
-        long,
-        value_enum,
-        value_delimiter = ',',
-        default_value = "csv,json",
-        env = "DATASETS_CRAWLER_FORMATS"
-    )]
+    #[arg(long, value_enum, value_delimiter = ',', env = "DATASETS_CRAWLER_FORMATS")]
     pub(crate) formats: Vec<FileFormatArg>,
 
     /// Use only canonical search terms.

@@ -16,7 +16,7 @@ use cli::{Args, FileFormatArg, SourceArg};
 /// - Returns an error if initialization or dataset discovery fails.
 ///
 /// # Panics
-/// - May panic
+/// - May panic on tokio runtime
 #[tokio::main]
 async fn main() -> Result<(), CrawlerError> {
     let args = Args::parse_args();

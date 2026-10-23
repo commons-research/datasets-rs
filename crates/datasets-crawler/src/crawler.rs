@@ -1,6 +1,6 @@
-use datasets_core::{ArtifactFormat, ContentType, CoreError, classify_artifact};
+use datasets_core::{ArtifactFormat, ContentType, classify_artifact};
 
-use super::{DatasetIndex, IndexedArtifact};
+use super::{CrawlerError, DatasetIndex, IndexedArtifact};
 
 /// An artifact discovered by a dataset source for inspection
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ impl Crawler {
     ///
     /// # Errors
     /// - Returns [`CoreError`] if the artifact cannot be classified
-    pub fn process(&mut self, artifact: CandidateArtifact) -> Result<(), CoreError> {
+    pub fn process(&mut self, artifact: CandidateArtifact) -> Result<(), CrawlerError> {
         let classifications =
             classify_artifact(&artifact.data, artifact.format, &self.content_types)?;
 
@@ -92,7 +92,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn processes_artifact_into_searchable_index() -> Result<(), CoreError> {
+    fn processes_artifact_into_searchable_index() -> Result<(), CrawlerError> {
         let csv = "\
 name,structure,formula
 ethanol,CCO,C2H6O

@@ -16,4 +16,7 @@ pub enum CrawlerError {
     /// Reading downloaded artifact failed
     #[error("failed to read downloaded artifact: {0}")]
     Io(#[from] io::Error),
+    /// Tokio async runtime failure
+    #[error("failed to initialize Tokio runtime: {0}")]
+    Runtime(#[source] io::Error),
 }
