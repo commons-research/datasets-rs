@@ -4,6 +4,7 @@ use hf_hub::{
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
+use tracing::debug;
 
 use super::super::{
     error::CrawlerError,
@@ -28,6 +29,7 @@ impl HuggingFaceSource {
 
 impl DatasetSource for HuggingFaceSource {
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, CrawlerError> {
+        debug!(query = %query, limit, "querying Hugging Face dataset search");
         let datasets: Vec<DatasetInfo> =
             self.client.list_datasets().search(query).limit(limit).send()?.try_collect().await?;
 
@@ -67,6 +69,8 @@ impl DatasetSource for HuggingFaceSource {
     ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
 
+        debug!(dataset_id = %dataset_id, limit, "requesting Hugging Face repo tree");
+
         let entries: Vec<RepoTreeEntry> = self
             .client
             .dataset(owner, name)
@@ -97,6 +101,8 @@ impl DatasetSource for HuggingFaceSource {
         artifact: &SourceArtifact,
     ) -> Result<Vec<u8>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
+
+        debug!(dataset_id = %dataset_id, artifact_path = %artifact.path, "requesting Hugging Face artifact download");
 
         let cached_path = self
             .client

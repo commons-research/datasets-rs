@@ -580,6 +580,8 @@ dependencies = [
  "hf-hub",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
