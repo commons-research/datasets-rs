@@ -19,9 +19,9 @@ pub struct CrawlConfig {
     /// Maximum number of unique datasets to inspect.
     pub max_datasets: usize,
     /// Maximum results returned per search term.
-    pub results_per_term: usize,
+    pub results_per_term: Option<usize>,
     /// Maximum repository entries retrieved per dataset.
-    pub max_tree_entries: usize,
+    pub max_tree_entries: Option<usize>,
     /// Maximum artifacts inspected per dataset.
     pub max_artifacts_per_dataset: usize,
     /// Maximum permitted artifact size in bytes.

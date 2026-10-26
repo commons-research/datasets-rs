@@ -29,7 +29,7 @@ pub trait DatasetSource: Send + Sync {
     fn search<'a>(
         &'a self,
         query: &'a str,
-        limit: usize,
+        limit: Option<usize>,
     ) -> impl Future<Output = Result<Vec<DatasetSummary>, CrawlerError>> + Send + 'a;
 
     /// Lists files available in dataset
@@ -39,7 +39,7 @@ pub trait DatasetSource: Send + Sync {
     fn list_artifacts<'a>(
         &'a self,
         dataset_id: &'a str,
-        limit: usize,
+        limit: Option<usize>,
     ) -> impl Future<Output = Result<Vec<SourceArtifact>, CrawlerError>> + Send + 'a;
 
     /// Downloads an artifact and returns content
