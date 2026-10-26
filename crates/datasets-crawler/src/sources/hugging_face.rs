@@ -28,10 +28,17 @@ impl HuggingFaceSource {
 }
 
 impl DatasetSource for HuggingFaceSource {
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<DatasetSummary>, CrawlerError> {
+    async fn search(&self, query: &str, limit: Option<usize>) -> Result<Vec<DatasetSummary>, CrawlerError> {
         debug!(query = %query, limit, "querying Hugging Face dataset search");
         let datasets: Vec<DatasetInfo> =
-            self.client.list_datasets().search(query).limit(limit).send()?.try_collect().await?;
+            self
+                .client
+                .list_datasets()
+                .maybe_limit(limit)
+                .search(query)
+                .send()?
+                .try_collect()
+            .await?;
 
         Ok(datasets
             .into_iter()
