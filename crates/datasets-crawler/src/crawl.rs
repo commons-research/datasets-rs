@@ -51,6 +51,39 @@ impl CrawlReport {
     }
 }
 
+/// Statistics collected while inspecting one dataset.
+#[derive(Debug, Default)]
+struct DatasetStats {
+    /// Number of supported artifacts attempted.
+    eligible_artifacts_attempted: usize,
+    /// Number of artifacts successfully downloaded.
+    downloaded_artifacts: usize,
+    /// Number of artifacts successfully processed by the crawler.
+    indexed_artifacts: usize,
+    /// Number of artifacts skipped because their format was unsupported.
+    skipped_unsupported_format: usize,
+    /// Number of artifacts skipped because they exceeded the size limit.
+    skipped_oversized: usize,
+    /// Number of artifact downloads that failed.
+    download_failures: usize,
+    /// Number of artifact classification attempts that failed.
+    classification_failures: usize,
+    /// Whether the configured artifact limit stopped inspection.
+    artifact_limit_reached: bool,
+}
+
+/// A downloaded artifact ready for classification.
+struct DownloadedArtifact<'a> {
+    /// Dataset containing the artifact.
+    dataset: &'a DatasetSummary,
+    /// Repository-relative path to the artifact.
+    path: &'a str,
+    /// Format selected for inspection.
+    format: ArtifactFormat,
+    /// Downloaded artifact contents.
+    data: Vec<u8>,
+}
+
 /// Discovers, inspects, classifies datasets
 ///
 /// # Errors
@@ -79,175 +112,215 @@ pub async fn crawl<S: DatasetSource>(
     let mut warnings = Vec::new();
 
     for dataset in datasets {
-        info!(
-            dataset_id = %dataset.id,
-            "inspecting discovered dataset"
-        );
-
-        let artifacts = match source.list_artifacts(&dataset.id, config.max_tree_entries).await {
-            Ok(artifacts) => artifacts,
-            Err(error) => {
-                warn!(
-                    dataset_id = %dataset.id,
-                    error = %error,
-                    "failed to list dataset artifacts; skipping dataset"
-                );
-
-                warnings.push(format!("Could not list artifacts for {}: {error}", dataset.id));
-
-                continue;
-            }
-        };
-
-        let repository_artifact_count = artifacts.len();
-
-        info!(
-            dataset_id = %dataset.id,
-            artifact_count = repository_artifact_count,
-            "retrieved repository artifact list"
-        );
-
-        let mut eligible_artifacts_attempted = 0;
-        let mut downloaded_artifacts = 0;
-        let mut indexed_artifacts = 0;
-        let mut skipped_unsupported_format = 0;
-        let mut skipped_oversized = 0;
-        let mut download_failures = 0;
-        let mut classification_failures = 0;
-        let mut artifact_limit_reached = false;
-
-        for artifact in artifacts {
-            if eligible_artifacts_attempted >= config.max_artifacts_per_dataset {
-                artifact_limit_reached = true;
-
-                debug!(
-                    dataset_id = %dataset.id,
-                    max_artifacts_per_dataset = config.max_artifacts_per_dataset,
-                    "stopping at configured artifact limit"
-                );
-
-                break;
-            }
-
-            let Some(format) = artifact_format_for_path(&artifact.path, &config.formats) else {
-                skipped_unsupported_format += 1;
-
-                debug!(
-                    dataset_id = %dataset.id,
-                    artifact_path = %artifact.path,
-                    "skipping unsupported artifact format"
-                );
-
-                continue;
-            };
-
-            if artifact.size_bytes > config.max_file_size_bytes {
-                skipped_oversized += 1;
-
-                debug!(
-                    dataset_id = %dataset.id,
-                    artifact_path = %artifact.path,
-                    artifact_size_bytes = artifact.size_bytes,
-                    max_file_size_bytes = config.max_file_size_bytes,
-                    "skipping oversized artifact"
-                );
-
-                continue;
-            }
-
-            eligible_artifacts_attempted += 1;
-
-            debug!(
-                dataset_id = %dataset.id,
-                artifact_path = %artifact.path,
-                artifact_size_bytes = artifact.size_bytes,
-                "downloading supported artifact"
-            );
-
-            let data = match source.download_artifact(&dataset.id, &artifact).await {
-                Ok(data) => {
-                    downloaded_artifacts += 1;
-                    data
-                }
-                Err(error) => {
-                    download_failures += 1;
-
-                    warn!(
-                        dataset_id = %dataset.id,
-                        artifact_path = %artifact.path,
-                        error = %error,
-                        "failed to download artifact; skipping it"
-                    );
-
-                    warnings.push(format!(
-                        "Could not download {} from {}: {error}",
-                        artifact.path, dataset.id
-                    ));
-
-                    continue;
-                }
-            };
-
-            let artifact_path = artifact.path;
-
-            let candidate = CandidateArtifact::new(
-                dataset.id.clone(),
-                dataset.url.clone(),
-                artifact_path.clone(),
-                format,
-                data,
-            );
-
-            match crawler.process(candidate) {
-                Ok(()) => {
-                    indexed_artifacts += 1;
-
-                    debug!(
-                        dataset_id = %dataset.id,
-                        artifact_path = %artifact_path,
-                        "artifact classified and indexed"
-                    );
-                }
-                Err(error) => {
-                    classification_failures += 1;
-
-                    warn!(
-                        dataset_id = %dataset.id,
-                        artifact_path = %artifact_path,
-                        error = %error,
-                        "failed to classify artifact"
-                    );
-
-                    warnings.push(format!(
-                        "Could not classify {} from {}: {error}",
-                        artifact_path, dataset.id
-                    ));
-                }
-            }
-        }
-
-        info!(
-            repository_artifact_count = repository_artifact_count,
-            eligible_artifacts_attempted = eligible_artifacts_attempted,
-            downloaded_artifacts = downloaded_artifacts,
-            indexed_artifacts = indexed_artifacts,
-            skipped_unsupported_format = skipped_unsupported_format,
-            skipped_oversized = skipped_oversized,
-            download_failures = download_failures,
-            classification_failures = classification_failures,
-            artifact_limit_reached = artifact_limit_reached,
-            "finished inspecting dataset"
-        );
+        inspect_dataset(source, &dataset, config, &mut crawler, &mut warnings).await;
     }
 
     info!(
-        discovered_dataset_count,
+        discovered_dataset_count = discovered_dataset_count,
         indexed_artifact_count = crawler.index().artifacts().count(),
         warning_count = warnings.len(),
         "crawl completed"
     );
 
     Ok(CrawlReport { crawler, warnings })
+}
+
+/// Inspects the supported artifacts in one dataset.
+async fn inspect_dataset<S: DatasetSource>(
+    source: &S,
+    dataset: &DatasetSummary,
+    config: &CrawlConfig,
+    crawler: &mut Crawler,
+    warnings: &mut Vec<String>,
+) {
+    info!(
+        dataset_id = %dataset.id,
+        "inspecting discovered dataset"
+    );
+
+    let artifacts = match source.list_artifacts(&dataset.id, config.max_tree_entries).await {
+        Ok(artifacts) => artifacts,
+        Err(error) => {
+            warn!(
+                dataset_id = %dataset.id,
+                error = %error,
+                "failed to list dataset artifacts; skipping dataset"
+            );
+
+            warnings.push(format!("Could not list artifacts for {}: {error}", dataset.id));
+
+            return;
+        }
+    };
+
+    let repository_artifact_count = artifacts.len();
+
+    info!(
+        dataset_id = %dataset.id,
+        artifact_count = repository_artifact_count,
+        "retrieved repository artifact list"
+    );
+
+    let mut stats = DatasetStats::default();
+
+    for artifact in artifacts {
+        if stats.eligible_artifacts_attempted >= config.max_artifacts_per_dataset {
+            stats.artifact_limit_reached = true;
+
+            debug!(
+                dataset_id = %dataset.id,
+                max_artifacts_per_dataset = config.max_artifacts_per_dataset,
+                "stopping at configured artifact limit"
+            );
+
+            break;
+        }
+
+        let Some(format) = select_artifact_format(
+            &dataset.id,
+            &artifact.path,
+            artifact.size_bytes,
+            config,
+            &mut stats,
+        ) else {
+            continue;
+        };
+
+        stats.eligible_artifacts_attempted += 1;
+
+        debug!(
+            dataset_id = %dataset.id,
+            artifact_path = %artifact.path,
+            artifact_size_bytes = artifact.size_bytes,
+            "downloading supported artifact"
+        );
+
+        let data = match source.download_artifact(&dataset.id, &artifact).await {
+            Ok(data) => {
+                stats.downloaded_artifacts += 1;
+                data
+            }
+            Err(error) => {
+                stats.download_failures += 1;
+
+                warn!(
+                    dataset_id = %dataset.id,
+                    artifact_path = %artifact.path,
+                    error = %error,
+                    "failed to download artifact; skipping it"
+                );
+
+                warnings.push(format!(
+                    "Could not download {} from {}: {error}",
+                    artifact.path, dataset.id
+                ));
+
+                continue;
+            }
+        };
+
+        classify_and_index(
+            crawler,
+            DownloadedArtifact { dataset, path: &artifact.path, format, data },
+            &mut stats,
+            warnings,
+        );
+    }
+
+    log_dataset_stats(&dataset.id, repository_artifact_count, &stats);
+}
+
+/// Selects an artifact for inspection if its format and size are supported.
+fn select_artifact_format(
+    dataset_id: &str,
+    artifact_path: &str,
+    artifact_size_bytes: u64,
+    config: &CrawlConfig,
+    stats: &mut DatasetStats,
+) -> Option<ArtifactFormat> {
+    let Some(format) = artifact_format_for_path(artifact_path, &config.formats) else {
+        stats.skipped_unsupported_format += 1;
+
+        debug!(dataset_id, artifact_path, "skipping unsupported artifact format");
+
+        return None;
+    };
+
+    if artifact_size_bytes > config.max_file_size_bytes {
+        stats.skipped_oversized += 1;
+
+        debug!(
+            dataset_id,
+            artifact_path,
+            artifact_size_bytes,
+            max_file_size_bytes = config.max_file_size_bytes,
+            "skipping oversized artifact"
+        );
+
+        return None;
+    }
+
+    Some(format)
+}
+
+/// Classifies a downloaded artifact and adds its results to the index.
+fn classify_and_index(
+    crawler: &mut Crawler,
+    artifact: DownloadedArtifact<'_>,
+    stats: &mut DatasetStats,
+    warnings: &mut Vec<String>,
+) {
+    let candidate = CandidateArtifact::new(
+        artifact.dataset.id.clone(),
+        artifact.dataset.url.clone(),
+        artifact.path.to_owned(),
+        artifact.format,
+        artifact.data,
+    );
+
+    match crawler.process(candidate) {
+        Ok(()) => {
+            stats.indexed_artifacts += 1;
+
+            debug!(
+                dataset_id = %artifact.dataset.id,
+                artifact_path = %artifact.path,
+                "artifact classified and indexed"
+            );
+        }
+        Err(error) => {
+            stats.classification_failures += 1;
+
+            warn!(
+                dataset_id = %artifact.dataset.id,
+                artifact_path = %artifact.path,
+                error = %error,
+                "failed to classify artifact"
+            );
+
+            warnings.push(format!(
+                "Could not classify {} from {}: {error}",
+                artifact.path, artifact.dataset.id
+            ));
+        }
+    }
+}
+
+/// Logs the inspection statistics for a dataset.
+fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: &DatasetStats) {
+    info!(
+        dataset_id,
+        repository_artifact_count,
+        eligible_artifacts_attempted = stats.eligible_artifacts_attempted,
+        downloaded_artifacts = stats.downloaded_artifacts,
+        indexed_artifacts = stats.indexed_artifacts,
+        skipped_unsupported_format = stats.skipped_unsupported_format,
+        skipped_oversized = stats.skipped_oversized,
+        download_failures = stats.download_failures,
+        classification_failures = stats.classification_failures,
+        artifact_limit_reached = stats.artifact_limit_reached,
+        "finished inspecting dataset"
+    );
 }
 
 /// Searches for datasets using the configured scientific search terms.
