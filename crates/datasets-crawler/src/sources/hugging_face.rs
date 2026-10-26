@@ -1,4 +1,6 @@
-use futures::TryStreamExt;
+use std::fs::File;
+
+use futures::{TryStreamExt, future};
 use hf_hub::{
     HFClient,
     repository::{DatasetInfo, RepoTreeEntry},
@@ -8,7 +10,7 @@ use tracing::debug;
 
 use super::super::{
     error::CrawlerError,
-    source::{DatasetSource, DatasetSummary, SourceArtifact},
+    source::{DatasetSource, DatasetSummary, SourceArtifact, FileFormat},
 };
 
 /// Structure for discovering datasets hosted on Hugging Face
@@ -28,45 +30,43 @@ impl HuggingFaceSource {
 }
 
 impl DatasetSource for HuggingFaceSource {
-    async fn search(&self, query: &str, limit: Option<usize>) -> Result<Vec<DatasetSummary>, CrawlerError> {
-        debug!(query = %query, limit, "querying Hugging Face dataset search");
+    async fn search(
+        &self, 
+        query: &str, 
+        formats: &[FileFormat],
+        limit: Option<usize>
+    ) -> Result<Vec<DatasetSummary>, CrawlerError> {
+        debug!(
+            query = %query, 
+            formats = ?formats,
+            limit = ?limit, 
+            "querying Hugging Face dataset search"
+        );
         let datasets: Vec<DatasetInfo> =
             self
                 .client
                 .list_datasets()
-                .maybe_limit(limit)
                 .search(query)
+                .maybe_limit(limit)
                 .send()?
+                .try_filter(|dataset| {
+                    let matches = dataset_matches_formats(dataset, formats);
+
+                    if !matches {
+                        debug!(
+                            dataset_id = %dataset.id,
+                            requested_formats = ?formats,
+                            "dataset rejected by Hugging Face format metadata"
+                        );
+                    }
+                    future::ready(matches)
+                })
                 .try_collect()
             .await?;
 
         Ok(datasets
             .into_iter()
-            .map(|dataset| {
-                let mut searchable_metadata = dataset.id.clone();
-
-                if let Some(description) = &dataset.description {
-                    searchable_metadata.push(' ');
-                    searchable_metadata.push_str(description);
-                }
-
-                if let Some(tags) = &dataset.tags {
-                    searchable_metadata.push(' ');
-                    searchable_metadata.push_str(&tags.join(" "));
-                }
-
-                if let Some(card_data) = &dataset.card_data {
-                    searchable_metadata.push(' ');
-                    searchable_metadata.push_str(&card_data.to_string());
-                }
-
-                DatasetSummary {
-                    url: format!("https://huggingface.co/datasets/{}", dataset.id),
-                    id: dataset.id,
-                    searchable_metadata,
-                }
-            })
-            .collect())
+            .map(dataset_summary).collect())
     }
 
     async fn list_artifacts(
@@ -121,4 +121,31 @@ impl DatasetSource for HuggingFaceSource {
 
         Ok(tokio::fs::read(cached_path).await?)
     }
+}
+
+
+/// Converts Hugging Face metadata into source-independent dataset metadata
+fn dataset_summary(
+    dataset: DatasetInfo
+) -> DatasetSummary {
+    let mut searchable_metadata = dataset.id.clone();
+
+    if let Some(description) = &dataset.description {
+        searchable_metadata.push(' ');
+        searchable_metadata.push_str(description);
+    }
+
+    if let Some(tags) = &dataset.tags {
+        searchable_metadata.push(' ' );
+        searchable_metadata.push_str(&tags.join(" "));
+    }
+
+    if let Some(card_data) = &dataset.card_data {
+        searchable_metadata.push(' ');
+        searchable_metadata.push_str(&card_data.to_string());
+    }
+
+    DatasetSummary { id: dataset.id, url: format!(
+        "https://huggingface.co/datasets/{}", dataset.id
+    ), searchable_metadata }
 }

@@ -86,6 +86,7 @@ pub trait DatasetSource: Send + Sync {
     fn search<'a>(
         &'a self,
         query: &'a str,
+        formats: &'a [FileFormat],
         limit: Option<usize>,
     ) -> impl Future<Output = Result<Vec<DatasetSummary>, CrawlerError>> + Send + 'a;
 
