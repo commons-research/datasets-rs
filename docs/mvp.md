@@ -35,6 +35,7 @@ The MVP should establish a core architecture for crawling datasets, determining 
 [x] local end-to-end classification
 [x] index
 [x] crawler
+[ ] logging support
 [ ] Hugging Face
     [x] source/client implementation
     [x] bounded dataset search

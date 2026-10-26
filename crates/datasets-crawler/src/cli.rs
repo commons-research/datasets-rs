@@ -82,8 +82,10 @@ pub enum SourceArg {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum FileFormatArg {
     /// Comma-separated values.
+    #[value(name = "csv")]
     Csv,
     /// JSON.
+    #[value(name = "json")]
     Json,
 }
 
