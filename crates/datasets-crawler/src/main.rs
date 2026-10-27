@@ -8,7 +8,7 @@ use datasets_crawler::{CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, cr
 /// Command-line configuration.
 mod cli;
 
-use cli::{Args, FileFormatArg, SourceArg};
+use cli::{Args, SourceArg};
 use tokio::runtime::Builder;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -54,14 +54,16 @@ async fn run(args: Args) -> Result<(), CrawlerError> {
 
     let config = CrawlConfig {
         content_types: args.content_types,
-        formats: args.formats.into_iter().map(FileFormatArg::artifact_format).collect(),
+        formats: args.formats,
         strict: args.strict,
         filter_terms: args.filter_terms,
         max_datasets: args.max_datasets,
         results_per_term: args.returns_per_term,
         max_tree_entries: args.max_tree_entries,
         max_artifacts_per_dataset: args.max_artifacts_per_dataset,
-        max_file_size_bytes: args.max_file_size_mb.saturating_mul(1_000_000),
+        max_file_size_bytes: args
+            .max_file_size_mb
+            .map(|megabytes| megabytes.saturating_mul(1_000_000)),
     };
 
     info!(

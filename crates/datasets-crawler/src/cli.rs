@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use datasets_core::{ArtifactFormat, ContentType};
+use super::source::FileFormat;
 
 /// CLI configuration for the dataset crawler.
 #[derive(Debug, Parser)]
@@ -10,27 +11,40 @@ use datasets_core::{ArtifactFormat, ContentType};
     arg_required_else_help = true
 )]
 pub struct Args {
+    /// Use the built-in configuration for unspecified arguments.
+    #[arg(long)]
+    default: bool,
+
     /// Dataset source to search.
-    #[arg(long, value_enum, env = "DATASETS_CRAWLER_SOURCE")]
-    pub(crate) source: SourceArg,
-
-    /// Scientific content types to seek, comma separated.
-    #[arg(long, value_delimiter = ',', required = true, env = "DATASETS_CRAWLER_CONTENT_TYPES")]
-    pub(crate) content_types: Vec<ContentType>,
-
-    /// File formats to inspect, comma separated.
     #[arg(
         long,
         value_enum,
+        required_unless_present = "default",
+        env = "DATASETS_CRAWLER_SOURCE"
+    )]
+    source: Option<SourceArg>,
+
+    /// Scientific content types to seek, comma separated.
+    #[arg(
+        long,
         value_delimiter = ',',
-        required = true,
+        required_unless_present = "default",
+        env = "DATASETS_CRAWLER_CONTENT_TYPES"
+    )]
+    content_types: Vec<ContentType>,
+
+    /// Physical file formats to inspect, comma separated.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        required_unless_present = "default",
         env = "DATASETS_CRAWLER_FORMATS"
     )]
-    pub(crate) formats: Vec<FileFormatArg>,
+    formats: Vec<FileFormat>,
 
     /// Use only canonical search terms.
     #[arg(long, env = "DATASETS_CRAWLER_STRICT")]
-    pub(crate) strict: bool,
+    strict: bool,
 
     /// Additional metadata terms; all non-empty terms must match.
     #[arg(
@@ -39,34 +53,103 @@ pub struct Args {
         value_delimiter = ',',
         env = "DATASETS_CRAWLER_FILTER_TERMS"
     )]
-    pub(crate) filter_terms: Vec<String>,
+    filter_terms: Vec<String>,
 
     /// Maximum number of unique datasets to inspect.
-    #[arg(long, default_value_t = 50, env = "DATASETS_CRAWLER_MAX_DATASETS")]
-    pub(crate) max_datasets: usize,
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_DATASETS")]
+    max_datasets: Option<usize>,
 
     /// Maximum results returned per search term.
-    #[arg(long, default_value_t = 10, env = "DATASETS_CRAWLER_RETURNS_PER_TERM")]
-    pub(crate) returns_per_term: usize,
+    #[arg(long, env = "DATASETS_CRAWLER_RETURNS_PER_TERM")]
+    returns_per_term: Option<usize>,
 
     /// Maximum repository entries retrieved per dataset.
-    #[arg(long, default_value_t = 500, env = "DATASETS_CRAWLER_MAX_TREE_ENTRIES")]
-    pub(crate) max_tree_entries: usize,
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_TREE_ENTRIES")]
+    max_tree_entries: Option<usize>,
 
     /// Maximum artifacts inspected per dataset.
-    #[arg(long, default_value_t = 10, env = "DATASETS_CRAWLER_MAX_ARTIFACTS_PER_DATASET")]
-    pub(crate) max_artifacts_per_dataset: usize,
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_ARTIFACTS_PER_DATASET")]
+    max_artifacts_per_dataset: Option<usize>,
 
     /// Maximum file size in decimal MB.
-    #[arg(long, default_value_t = 10, env = "DATASETS_CRAWLER_MAX_FILE_SIZE_MB")]
-    pub(crate) max_file_size_mb: u64,
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_FILE_SIZE_MB")]
+    max_file_size_mb: Option<u64>,
 }
 
+/// Fully resolved CLI configuration.
+pub(crate) struct ResolvedArgs {
+    pub(crate) source: SourceArg,
+    pub(crate) content_types: Vec<ContentType>,
+    pub(crate) formats: Vec<FileFormat>,
+    pub(crate) strict: bool,
+    pub(crate) filter_terms: Vec<String>,
+    pub(crate) max_datasets: Option<usize>,
+    pub(crate) returns_per_term: Option<usize>,
+    pub(crate) max_tree_entries: Option<usize>,
+    pub(crate) max_artifacts_per_dataset: Option<usize>,
+    pub(crate) max_file_size_mb: Option<u64>,
+}
+
+
 impl Args {
-    /// Parses configuration from the command line and environment.
+    /// Parses and resolves crawler configuration.
     #[must_use]
-    pub(crate) fn parse_args() -> Self {
-        Self::parse()
+    pub(crate) fn parse_args() -> ResolvedArgs {
+        Self::parse().resolve()
+    }
+
+    /// Resolves explicitly supplied arguments and optional defaults.
+    fn resolve(self) -> ResolvedArgs {
+        let source = self
+            .source
+            .unwrap_or(SourceArg::HuggingFace);
+
+        let content_types = if self.content_types.is_empty() {
+            vec![
+                ContentType::Smiles,
+                ContentType::MolecularFormula,
+            ]
+        } else {
+            self.content_types
+        };
+
+        let formats = if self.formats.is_empty() {
+            vec![
+                FileFormat::Csv,
+                FileFormat::Json,
+            ]
+        } else {
+            self.formats
+        };
+
+        ResolvedArgs {
+            source,
+            content_types,
+            formats,
+            strict: self.strict,
+            filter_terms: self.filter_terms,
+
+            max_datasets: self.max_datasets.or(
+                self.default.then_some(50),
+            ),
+
+            returns_per_term: self.returns_per_term.or(
+                self.default.then_some(10),
+            ),
+
+            max_tree_entries: self.max_tree_entries.or(
+                self.default.then_some(500),
+            ),
+
+            max_artifacts_per_dataset:
+                self.max_artifacts_per_dataset.or(
+                    self.default.then_some(10),
+                ),
+
+            max_file_size_mb: self.max_file_size_mb.or(
+                self.default.then_some(10),
+            ),
+        }
     }
 }
 
@@ -76,26 +159,4 @@ pub enum SourceArg {
     /// Hugging Face Hub.
     #[value(name = "hf")]
     HuggingFace,
-}
-
-/// Supported file formats selected by the CLI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum FileFormatArg {
-    /// Comma-separated values.
-    #[value(name = "csv")]
-    Csv,
-    /// JSON.
-    #[value(name = "json")]
-    Json,
-}
-
-impl FileFormatArg {
-    /// Converts the CLI format into a core artifact format.
-    #[must_use]
-    pub(crate) const fn artifact_format(self) -> ArtifactFormat {
-        match self {
-            Self::Csv => ArtifactFormat::Tabular,
-            Self::Json => ArtifactFormat::Json,
-        }
-    }
 }

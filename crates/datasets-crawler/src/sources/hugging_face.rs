@@ -1,5 +1,3 @@
-use std::fs::File;
-
 use futures::{TryStreamExt, future};
 use hf_hub::{
     HFClient,
@@ -145,7 +143,29 @@ fn dataset_summary(
         searchable_metadata.push_str(&card_data.to_string());
     }
 
-    DatasetSummary { id: dataset.id, url: format!(
+    DatasetSummary { id: dataset.id.clone(), url: format!(
         "https://huggingface.co/datasets/{}", dataset.id
     ), searchable_metadata }
+}
+
+/// Checks HF format metadata against required file formats
+fn dataset_matches_formats(
+    dataset: &DatasetInfo,
+    requested_formats: &[FileFormat]
+) -> bool {
+    if requested_formats.is_empty() {
+        return true;
+    }
+    let Some(tags) = &dataset.tags else {
+        return true;
+    };
+
+    let format_tags: Vec<&str> = tags.iter().filter_map(|tag| tag.strip_prefix("format:")).collect();
+    if format_tags.is_empty() {
+        return true;
+    }
+
+    requested_formats.iter().any(|format| {
+        format_tags.iter().any(|tag| *tag == format.as_str())
+    })
 }
