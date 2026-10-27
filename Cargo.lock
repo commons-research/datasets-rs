@@ -567,6 +567,7 @@ dependencies = [
  "molecular-formulas 0.3.0",
  "serde_json",
  "smiles-rs",
+ "strum",
  "thiserror",
 ]
 
@@ -578,6 +579,7 @@ dependencies = [
  "datasets-core",
  "futures",
  "hf-hub",
+ "strum",
  "thiserror",
  "tokio",
  "tracing",

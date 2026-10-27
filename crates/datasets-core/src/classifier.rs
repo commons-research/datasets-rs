@@ -5,7 +5,7 @@ use super::{
     tabular::TabularVisitor,
     visitor::Visitor,
 };
-use crate::{ContentType, labeler::Labeler};
+use super::{ContentType, labeler::Labeler};
 
 /// Structure of an artifact being inspected.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

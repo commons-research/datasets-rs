@@ -1,9 +1,9 @@
 use std::{fmt, str::FromStr};
-
-use crate::CoreError;
+use strum::VariantArray;
+use super::CoreError;
 
 /// Scientific content type that may be detected within a dataset.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, VariantArray)]
 #[non_exhaustive]
 pub enum ContentType {
     /// [SMILES](https://en.wikipedia.org/wiki/Simplified_Molecular_Input_Line_Entry_System) representation
@@ -42,6 +42,12 @@ impl ContentType {
                 ]
             }
         }
+    }
+
+    /// Returns all supported scientific content types
+    #[must_use]
+    pub fn all_types() -> Vec<Self> {
+        Self::VARIANTS.to_vec()
     }
 }
 

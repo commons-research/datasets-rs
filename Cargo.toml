@@ -14,6 +14,8 @@ repository = "https://github.com/commons-research/datasets-rs"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+strum = { version = "0.28.0", features = ["derive"] }
+
 
 [workspace.lints.rust]
 missing_docs = "deny"
