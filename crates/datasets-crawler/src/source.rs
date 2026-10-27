@@ -1,9 +1,10 @@
 use std::{fmt, str::FromStr};
+use strum::VariantArray;
 use datasets_core::ArtifactFormat;
 use super::error::CrawlerError;
 
 /// File format exposed by dataset source
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, VariantArray)]
 #[non_exhaustive]
 pub enum FileFormat {
     /// Comma-separated values
@@ -35,6 +36,11 @@ impl FileFormat {
             Self::Csv => ArtifactFormat::Tabular,
             Self::Json => ArtifactFormat::Json,
         }
+    }
+
+    /// Returns all supported file formats
+    pub fn all_formats() -> Vec<Self> {
+        Self::VARIANTS.to_vec()
     }
 }
 
