@@ -1,5 +1,7 @@
 use std::{fmt, str::FromStr};
+
 use strum::VariantArray;
+
 use super::CoreError;
 
 /// Scientific content type that may be detected within a dataset.

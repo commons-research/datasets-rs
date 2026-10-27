@@ -1,11 +1,11 @@
 use super::{
-    Classification, CoreError,
+    Classification, ContentType, CoreError,
     json::JsonVisitor,
+    labeler::Labeler,
     labels::{MolecularFormulaLabeler, SmilesLabeler},
     tabular::TabularVisitor,
     visitor::Visitor,
 };
-use super::{ContentType, labeler::Labeler};
 
 /// Structure of an artifact being inspected.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

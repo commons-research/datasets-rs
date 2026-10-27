@@ -17,5 +17,5 @@ pub use crawl::{CrawlConfig, CrawlReport, crawl};
 pub use crawler::{CandidateArtifact, Crawler};
 pub use error::CrawlerError;
 pub use index::{DatasetIndex, IndexedArtifact};
-pub use source::{DatasetSource, DatasetSummary, SourceArtifact, FileFormat};
+pub use source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact};
 pub use sources::HuggingFaceSource;

@@ -1,6 +1,8 @@
 use std::{fmt, str::FromStr};
-use strum::VariantArray;
+
 use datasets_core::ArtifactFormat;
+use strum::VariantArray;
+
 use super::error::CrawlerError;
 
 /// File format exposed by dataset source
@@ -39,6 +41,7 @@ impl FileFormat {
     }
 
     /// Returns all supported file formats
+    #[must_use]
     pub fn all_formats() -> Vec<Self> {
         Self::VARIANTS.to_vec()
     }
@@ -57,8 +60,7 @@ impl FromStr for FileFormat {
         match s.trim().to_ascii_lowercase().as_str() {
             "csv" => Ok(Self::Csv),
             "json" => Ok(Self::Json),
-            _ => Err(CrawlerError::ParseFileFormat(s.to_owned(),
-            ))
+            _ => Err(CrawlerError::ParseFileFormat(s.to_owned())),
         }
     }
 }

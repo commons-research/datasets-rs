@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::Path};
 use datasets_core::{ArtifactFormat, ContentType};
 use tracing::{debug, info, warn};
 
-use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary};
+use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary, FileFormat};
 
 /// Configuration for a repository-independent crawl.
 #[derive(Debug, Clone)]
@@ -11,21 +11,21 @@ pub struct CrawlConfig {
     /// Scientific content types to seek.
     pub content_types: Vec<ContentType>,
     /// Artifact formats to inspect.
-    pub formats: Vec<ArtifactFormat>,
+    pub formats: Vec<FileFormat>,
     /// Search only the canonical term for each content type.
     pub strict: bool,
     /// Additional metadata terms that must all match.
     pub filter_terms: Vec<String>,
     /// Maximum number of unique datasets to inspect.
-    pub max_datasets: usize,
+    pub max_datasets: Option<usize>,
     /// Maximum results returned per search term.
     pub results_per_term: Option<usize>,
     /// Maximum repository entries retrieved per dataset.
     pub max_tree_entries: Option<usize>,
     /// Maximum artifacts inspected per dataset.
-    pub max_artifacts_per_dataset: usize,
+    pub max_artifacts_per_dataset: Option<usize>,
     /// Maximum permitted artifact size in bytes.
-    pub max_file_size_bytes: u64,
+    pub max_file_size_bytes: Option<u64>,
 }
 
 /// Results and non-fatal issues produced by a crawl.
@@ -148,7 +148,6 @@ async fn inspect_dataset<S: DatasetSource>(
             );
 
             warnings.push(format!("Could not list artifacts for {}: {error}", dataset.id));
-
             return;
         }
     };
@@ -164,15 +163,7 @@ async fn inspect_dataset<S: DatasetSource>(
     let mut stats = DatasetStats::default();
 
     for artifact in artifacts {
-        if stats.eligible_artifacts_attempted >= config.max_artifacts_per_dataset {
-            stats.artifact_limit_reached = true;
-
-            debug!(
-                dataset_id = %dataset.id,
-                max_artifacts_per_dataset = config.max_artifacts_per_dataset,
-                "stopping at configured artifact limit"
-            );
-
+        if should_stop_for_artifact_limit(&dataset.id, config, &mut stats) {
             break;
         }
 
@@ -230,6 +221,27 @@ async fn inspect_dataset<S: DatasetSource>(
     log_dataset_stats(&dataset.id, repository_artifact_count, &stats);
 }
 
+/// Determines whether the configured artifact limit has been reached.
+fn should_stop_for_artifact_limit(
+    dataset_id: &str,
+    config: &CrawlConfig,
+    stats: &mut DatasetStats,
+) -> bool {
+    let Some(limit) = config.max_artifacts_per_dataset else {
+        return false;
+    };
+
+    if stats.eligible_artifacts_attempted < limit {
+        return false;
+    }
+
+    stats.artifact_limit_reached = true;
+
+    debug!(dataset_id, max_artifacts_per_dataset = limit, "stopping at configured artifact limit");
+
+    true
+}
+
 /// Selects an artifact for inspection if its format and size are supported.
 fn select_artifact_format(
     dataset_id: &str,
@@ -246,9 +258,7 @@ fn select_artifact_format(
         return None;
     };
 
-    if artifact_size_bytes > config.max_file_size_bytes {
-        stats.skipped_oversized += 1;
-
+    if config.max_file_size_bytes.is_some_and(|limit| artifact_size_bytes > limit) {
         debug!(
             dataset_id,
             artifact_path,
@@ -331,7 +341,7 @@ async fn discover_datasets<S: DatasetSource>(
     source: &S,
     config: &CrawlConfig,
 ) -> Result<Vec<DatasetSummary>, CrawlerError> {
-    if config.max_datasets == 0 {
+    if config.max_datasets == Some(0) {
         info!("dataset limit is zero; skipping discovery");
         return Ok(Vec::new());
     }
@@ -352,7 +362,7 @@ async fn discover_datasets<S: DatasetSource>(
             "searching dataset source"
         );
 
-        let results = source.search(&term, config.results_per_term).await?;
+        let results = source.search(&term, &config.formats, config.results_per_term).await?;
         let result_count = results.len();
 
         info!(
@@ -387,7 +397,7 @@ async fn discover_datasets<S: DatasetSource>(
 
                 datasets.push(dataset);
 
-                if datasets.len() >= config.max_datasets {
+                if config.max_datasets.is_some_and(|limit| datasets.len() >= limit) {
                     reached_limit = true;
                     break;
                 }
@@ -473,14 +483,15 @@ fn matches_filter_terms(dataset: &DatasetSummary, filter_terms: &[String]) -> bo
         .all(|term| metadata.contains(&term.trim().to_lowercase()))
 }
 
-/// Maps a supported file extension to its configured artifact format.
-fn artifact_format_for_path(path: &str, formats: &[ArtifactFormat]) -> Option<ArtifactFormat> {
+/// Maps a path to its configured artifact format.
+fn artifact_format_for_path(path: &str, formats: &[FileFormat]) -> Option<ArtifactFormat> {
     let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
 
-    formats.iter().copied().find(|format| {
-        match *format {
-            ArtifactFormat::Tabular => extension == "csv",
-            ArtifactFormat::Json => extension == "json",
+    formats.iter().find_map(|format| {
+        match (*format, extension.as_str()) {
+            (FileFormat::Csv, "csv") => Some(ArtifactFormat::Tabular),
+            (FileFormat::Json, "json") => Some(ArtifactFormat::Json),
+            _ => None,
         }
     })
 }

@@ -8,7 +8,7 @@ use tracing::debug;
 
 use super::super::{
     error::CrawlerError,
-    source::{DatasetSource, DatasetSummary, SourceArtifact, FileFormat},
+    source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact},
 };
 
 /// Structure for discovering datasets hosted on Hugging Face
@@ -29,42 +29,39 @@ impl HuggingFaceSource {
 
 impl DatasetSource for HuggingFaceSource {
     async fn search(
-        &self, 
-        query: &str, 
+        &self,
+        query: &str,
         formats: &[FileFormat],
-        limit: Option<usize>
+        limit: Option<usize>,
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
         debug!(
-            query = %query, 
+            query = %query,
             formats = ?formats,
-            limit = ?limit, 
+            limit = ?limit,
             "querying Hugging Face dataset search"
         );
-        let datasets: Vec<DatasetInfo> =
-            self
-                .client
-                .list_datasets()
-                .search(query)
-                .maybe_limit(limit)
-                .send()?
-                .try_filter(|dataset| {
-                    let matches = dataset_matches_formats(dataset, formats);
+        let datasets: Vec<DatasetInfo> = self
+            .client
+            .list_datasets()
+            .search(query)
+            .maybe_limit(limit)
+            .send()?
+            .try_filter(|dataset| {
+                let matches = dataset_matches_formats(dataset, formats);
 
-                    if !matches {
-                        debug!(
-                            dataset_id = %dataset.id,
-                            requested_formats = ?formats,
-                            "dataset rejected by Hugging Face format metadata"
-                        );
-                    }
-                    future::ready(matches)
-                })
-                .try_collect()
+                if !matches {
+                    debug!(
+                        dataset_id = %dataset.id,
+                        requested_formats = ?formats,
+                        "dataset rejected by Hugging Face format metadata"
+                    );
+                }
+                future::ready(matches)
+            })
+            .try_collect()
             .await?;
 
-        Ok(datasets
-            .into_iter()
-            .map(dataset_summary).collect())
+        Ok(datasets.iter().map(dataset_summary).collect())
     }
 
     async fn list_artifacts(
@@ -121,11 +118,8 @@ impl DatasetSource for HuggingFaceSource {
     }
 }
 
-
 /// Converts Hugging Face metadata into source-independent dataset metadata
-fn dataset_summary(
-    dataset: DatasetInfo
-) -> DatasetSummary {
+fn dataset_summary(dataset: &DatasetInfo) -> DatasetSummary {
     let mut searchable_metadata = dataset.id.clone();
 
     if let Some(description) = &dataset.description {
@@ -134,7 +128,7 @@ fn dataset_summary(
     }
 
     if let Some(tags) = &dataset.tags {
-        searchable_metadata.push(' ' );
+        searchable_metadata.push(' ');
         searchable_metadata.push_str(&tags.join(" "));
     }
 
@@ -143,16 +137,15 @@ fn dataset_summary(
         searchable_metadata.push_str(&card_data.to_string());
     }
 
-    DatasetSummary { id: dataset.id.clone(), url: format!(
-        "https://huggingface.co/datasets/{}", dataset.id
-    ), searchable_metadata }
+    DatasetSummary {
+        id: dataset.id.clone(),
+        url: format!("https://huggingface.co/datasets/{}", dataset.id),
+        searchable_metadata,
+    }
 }
 
 /// Checks HF format metadata against required file formats
-fn dataset_matches_formats(
-    dataset: &DatasetInfo,
-    requested_formats: &[FileFormat]
-) -> bool {
+fn dataset_matches_formats(dataset: &DatasetInfo, requested_formats: &[FileFormat]) -> bool {
     if requested_formats.is_empty() {
         return true;
     }
@@ -160,12 +153,11 @@ fn dataset_matches_formats(
         return true;
     };
 
-    let format_tags: Vec<&str> = tags.iter().filter_map(|tag| tag.strip_prefix("format:")).collect();
+    let format_tags: Vec<&str> =
+        tags.iter().filter_map(|tag| tag.strip_prefix("format:")).collect();
     if format_tags.is_empty() {
         return true;
     }
 
-    requested_formats.iter().any(|format| {
-        format_tags.iter().any(|tag| *tag == format.as_str())
-    })
+    requested_formats.iter().any(|format| format_tags.iter().any(|tag| *tag == format.as_str()))
 }

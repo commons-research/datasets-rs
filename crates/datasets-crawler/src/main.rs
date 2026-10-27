@@ -13,6 +13,8 @@ use tokio::runtime::Builder;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use self::cli::ResolvedArgs;
+
 /// Runs the dataset crawler.
 ///
 /// # Errors
@@ -49,7 +51,7 @@ fn init_logging() -> Result<(), CrawlerError> {
 ///
 /// # Errors
 /// - Returns error if init or dataset search fails
-async fn run(args: Args) -> Result<(), CrawlerError> {
+async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
     let selected_source = args.source;
 
     let config = CrawlConfig {

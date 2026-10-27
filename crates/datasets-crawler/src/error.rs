@@ -24,5 +24,5 @@ pub enum CrawlerError {
     Logging(String),
     /// Parsing file format failed
     #[error("failed to parse file format: {0}")]
-    ParseFileFormat(String)
+    ParseFileFormat(String),
 }
