@@ -125,17 +125,17 @@ impl Args {
             strict: self.strict,
             filter_terms: self.filter_terms,
 
-            max_datasets: self.max_datasets.or(self.default.then_some(50)),
+            max_datasets: self.max_datasets.or_else(|| self.default.then_some(50)),
 
-            returns_per_term: self.returns_per_term.or(self.default.then_some(10)),
+            returns_per_term: self.returns_per_term.or_else(|| self.default.then_some(10)),
 
-            max_tree_entries: self.max_tree_entries.or(self.default.then_some(500)),
+            max_tree_entries: self.max_tree_entries.or_else(|| self.default.then_some(500)),
 
             max_artifacts_per_dataset: self
                 .max_artifacts_per_dataset
-                .or(self.default.then_some(10)),
+                .or_else(|| self.default.then_some(10)),
 
-            max_file_size_mb: self.max_file_size_mb.or(self.default.then_some(10)),
+            max_file_size_mb: self.max_file_size_mb.or_else(|| self.default.then_some(10)),
         }
     }
 }
