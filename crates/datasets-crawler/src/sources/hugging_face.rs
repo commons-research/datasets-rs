@@ -1,4 +1,4 @@
-use futures::{TryStreamExt, future};
+use futures::{StreamExt, TryStreamExt, future};
 use hf_hub::{
     HFClient,
     repository::{DatasetInfo, RepoTreeEntry},
@@ -40,13 +40,8 @@ impl DatasetSource for HuggingFaceSource {
             limit = ?limit,
             "querying Hugging Face dataset search"
         );
-        let datasets: Vec<DatasetInfo> = self
-            .client
-            .list_datasets()
-            .search(query)
-            .maybe_limit(limit)
-            .send()?
-            .try_filter(|dataset| {
+
+        let stream = self.client.list_datasets().search(query).full(true).send()?.try_filter(|dataset| {
                 let matches = dataset_matches_formats(dataset, formats);
 
                 if !matches {
@@ -57,9 +52,18 @@ impl DatasetSource for HuggingFaceSource {
                     );
                 }
                 future::ready(matches)
-            })
-            .try_collect()
-            .await?;
+        });
+
+        let datasets: Vec<DatasetInfo> = match limit {
+            Some(limit) => stream.take(limit).try_collect().await?,
+            None => stream.try_collect().await?
+        };
+
+        debug!(
+            query = %query,
+            matching_datasets = datasets.len(),
+            "finished Hugging Face metadata filtering"
+        );
 
         Ok(datasets.iter().map(dataset_summary).collect())
     }
@@ -153,11 +157,14 @@ fn dataset_matches_formats(dataset: &DatasetInfo, requested_formats: &[FileForma
         return true;
     };
 
-    let format_tags: Vec<&str> =
-        tags.iter().filter_map(|tag| tag.strip_prefix("format:")).collect();
-    if format_tags.is_empty() {
-        return true;
-    }
 
-    requested_formats.iter().any(|format| format_tags.iter().any(|tag| *tag == format.as_str()))
+    let mut format_tags = tags.iter().filter_map(|tag| tag.strip_prefix("format:"));
+
+    let Some(first_tag) = format_tags.next() else {
+        return true;
+    };
+
+    requested_formats.iter().any(|format| {
+        first_tag == format.as_str() || format_tags.clone().any(|tag| tag == format.as_str())
+    })
 }

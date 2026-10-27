@@ -259,6 +259,7 @@ fn select_artifact_format(
     };
 
     if config.max_file_size_bytes.is_some_and(|limit| artifact_size_bytes > limit) {
+        stats.skipped_oversized += 1;
         debug!(
             dataset_id,
             artifact_path,
