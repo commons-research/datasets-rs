@@ -10,7 +10,7 @@ use datasets_crawler::FileFormat;
     about = "Discover and classify scientific datasets on public repositories",
     arg_required_else_help = true
 )]
-pub(super) struct Args {
+pub struct Args {
     /// Use the built-in configuration for unspecified arguments.
     #[arg(long)]
     default: bool,
@@ -72,17 +72,27 @@ pub(super) struct Args {
 }
 
 /// Fully resolved CLI configuration.
-pub(super) struct ResolvedArgs {
-    pub(super) source: SourceArg,
-    pub(super) content_types: Vec<ContentType>,
-    pub(super) formats: Vec<FileFormat>,
-    pub(super) strict: bool,
-    pub(super) filter_terms: Vec<String>,
-    pub(super) max_datasets: Option<usize>,
-    pub(super) returns_per_term: Option<usize>,
-    pub(super) max_tree_entries: Option<usize>,
-    pub(super) max_artifacts_per_dataset: Option<usize>,
-    pub(super) max_file_size_mb: Option<u64>,
+pub struct ResolvedArgs {
+    /// Selected dataset source.
+    pub source: SourceArg,
+    /// Scientific content types to classify.
+    pub content_types: Vec<ContentType>,
+    /// Physical file formats to inspect.
+    pub formats: Vec<FileFormat>,
+    /// Whether to use only canonical search terms.
+    pub strict: bool,
+    /// Additional metadata terms used to filter search results.
+    pub filter_terms: Vec<String>,
+    /// Maximum number of unique datasets to inspect.
+    pub max_datasets: Option<usize>,
+    /// Maximum results returned per search term.
+    pub returns_per_term: Option<usize>,
+    /// Maximum repository entries retrieved per dataset.
+    pub max_tree_entries: Option<usize>,
+    /// Maximum artifacts inspected per dataset.
+    pub max_artifacts_per_dataset: Option<usize>,
+    /// Maximum permitted file size in decimal megabytes.
+    pub max_file_size_mb: Option<u64>,
 }
 
 impl Args {
@@ -132,7 +142,7 @@ impl Args {
 
 /// Dataset source selected by the CLI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub(super) enum SourceArg {
+pub enum SourceArg {
     /// Hugging Face Hub.
     #[value(name = "hf")]
     HuggingFace,
