@@ -19,6 +19,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 strum.workspace = true
 indicatif.workspace = true
+zenodo-rs = "0.3.0"
 
 [lints]
 workspace = true
