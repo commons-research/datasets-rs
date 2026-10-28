@@ -3,7 +3,9 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use datasets_core::ContentType;
-use datasets_crawler::{CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, crawl};
+use datasets_crawler::{
+    CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, ZenodoSource, crawl,
+};
 
 /// Command-line configuration.
 mod cli;
@@ -84,6 +86,10 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
     let report = match selected_source {
         SourceArg::HuggingFace => {
             let source = HuggingFaceSource::new()?;
+            crawl(&source, &config).await?
+        }
+        SourceArg::Zenodo => {
+            let source = ZenodoSource::new()?;
             crawl(&source, &config).await?
         }
     };

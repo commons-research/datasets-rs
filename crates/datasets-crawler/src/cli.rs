@@ -146,4 +146,7 @@ pub enum SourceArg {
     /// Hugging Face Hub.
     #[value(name = "hf")]
     HuggingFace,
+    /// Zenodo Open Science data hosting platform
+    #[value(name = "zenodo")]
+    Zenodo,
 }
