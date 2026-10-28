@@ -5,6 +5,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 /// Displays progress for an artifact download
 #[derive(Clone)]
 pub struct DownloadProgress {
+    /// Progress bar instance
     progress_bar: ProgressBar,
 }
 
@@ -18,11 +19,7 @@ impl DownloadProgress {
             ProgressBar::new_spinner()
         };
 
-        let style = if total_bytes > 0 {
-            download_bar_style()
-        } else {
-            download_spinner_style()
-        };
+        let style = if total_bytes > 0 { download_bar_style() } else { download_spinner_style() };
 
         progress_bar.set_style(style);
         progress_bar.set_message(message);
@@ -45,13 +42,13 @@ impl DownloadProgress {
     pub fn set_position(&self, bytes_completed: u64) {
         self.progress_bar.set_position(bytes_completed);
     }
-    
+
     /// Marks download as successful
     pub fn finish_with_message(&self, message: String) {
         self.progress_bar.finish_with_message(message);
     }
 
-    /// Marks download unsuccessful 
+    /// Marks download unsuccessful
     pub fn abandon_with_message(&self, message: String) {
         self.progress_bar.abandon_with_message(message);
     }
@@ -59,18 +56,16 @@ impl DownloadProgress {
 
 /// Creates progress-bar style used for download
 fn download_bar_style() -> ProgressStyle {
-    match ProgressStyle::with_template("[{elapsed_precise}] {bar:30.cyan/blue} {percent:>3}% \
+    ProgressStyle::with_template(
+        "[{elapsed_precise}] {bar:30.cyan/blue} {percent:>3}% \
          {binary_bytes}/{binary_total_bytes} {binary_bytes_per_sec} \
-         ETA {eta} {msg}") {
-            Ok(style) => style.progress_chars("=>-"),
-            Err(_) => ProgressStyle::default_bar()
-         }
+         ETA {eta} {msg}",
+    )
+    .map_or_else(|_| ProgressStyle::default_bar(), |style| style.progress_chars("=>-"))
 }
 
 /// Creates the spinner stlye used when total size not known
 fn download_spinner_style() -> ProgressStyle {
-    match ProgressStyle::with_template("[{elapsed_precise}] {spinner} {binary_bytes} {msg}") {
-        Ok(style) => style,
-        Err(_) => ProgressStyle::default_spinner()
-    }
+    ProgressStyle::with_template("[{elapsed_precise}] {spinner} {binary_bytes} {msg}")
+        .unwrap_or_else(|_| ProgressStyle::default_spinner())
 }

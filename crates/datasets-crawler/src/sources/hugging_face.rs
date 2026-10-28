@@ -1,17 +1,17 @@
-use core::error;
-
 use futures::{StreamExt, TryStreamExt, future};
 use hf_hub::{
-    HFClient, progress::{self, DownloadEvent, ProgressEvent, ProgressHandler}, repository::{DatasetInfo, RepoTreeEntry, download}, split_id,
+    HFClient,
+    progress::{DownloadEvent, ProgressEvent, ProgressHandler},
+    repository::{DatasetInfo, RepoTreeEntry},
+    split_id,
 };
 use tracing::debug;
-
-use crate::progress::DownloadProgress;
 
 use super::super::{
     error::CrawlerError,
     source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact},
 };
+use crate::progress::DownloadProgress;
 
 /// Structure for discovering datasets hosted on Hugging Face
 pub struct HuggingFaceSource {
@@ -43,7 +43,8 @@ impl DatasetSource for HuggingFaceSource {
             "querying Hugging Face dataset search"
         );
 
-        let stream = self.client.list_datasets().search(query).full(true).send()?.try_filter(|dataset| {
+        let stream =
+            self.client.list_datasets().search(query).full(true).send()?.try_filter(|dataset| {
                 let matches = dataset_matches_formats(dataset, formats);
 
                 if !matches {
@@ -54,11 +55,11 @@ impl DatasetSource for HuggingFaceSource {
                     );
                 }
                 future::ready(matches)
-        });
+            });
 
         let datasets: Vec<DatasetInfo> = match limit {
             Some(limit) => stream.take(limit).try_collect().await?,
-            None => stream.try_collect().await?
+            None => stream.try_collect().await?,
         };
 
         debug!(
@@ -103,7 +104,7 @@ impl DatasetSource for HuggingFaceSource {
             .collect())
     }
 
-async fn download_artifact(
+    async fn download_artifact(
         &self,
         dataset_id: &str,
         artifact: &SourceArtifact,
@@ -124,19 +125,13 @@ async fn download_artifact(
             .dataset(owner, name)
             .download_file()
             .filename(artifact.path.clone())
-            .progress(HuggingFaceProgressHandler::new(
-                progress.clone(),
-                artifact.path.clone(),
-            ))
+            .progress(HuggingFaceProgressHandler::new(progress.clone(), artifact.path.clone()))
             .send()
             .await;
 
         let cached_path = match download_result {
             Ok(path) => {
-                progress.finish_with_message(format!(
-                    "Downloaded {dataset_id}/{}",
-                    artifact.path
-                ));
+                progress.finish_with_message(format!("Downloaded {dataset_id}/{}", artifact.path));
                 path
             }
             Err(error) => {
@@ -202,7 +197,6 @@ fn dataset_matches_formats(dataset: &DatasetInfo, requested_formats: &[FileForma
         return true;
     };
 
-
     let mut format_tags = tags.iter().filter_map(|tag| tag.strip_prefix("format:"));
 
     let Some(first_tag) = format_tags.next() else {
@@ -214,8 +208,7 @@ fn dataset_matches_formats(dataset: &DatasetInfo, requested_formats: &[FileForma
     })
 }
 
-
-/// Adapts HF download events to shared progress display 
+/// Adapts HF download events to shared progress display
 struct HuggingFaceProgressHandler {
     /// Shared terminal progress display
     progress: DownloadProgress,
@@ -226,11 +219,8 @@ struct HuggingFaceProgressHandler {
 impl HuggingFaceProgressHandler {
     /// Creates a handler for artifact download
     #[must_use]
-    fn new(progress: DownloadProgress, artifact_path: String) -> Self {
-        Self {
-            progress,
-            artifact_path,
-        }
+    const fn new(progress: DownloadProgress, artifact_path: String) -> Self {
+        Self { progress, artifact_path }
     }
 }
 
@@ -246,20 +236,13 @@ impl ProgressHandler for HuggingFaceProgressHandler {
             }
 
             DownloadEvent::Progress { files } => {
-                if let Some(file) = files
-                    .iter()
-                    .find(|file| file.filename == self.artifact_path)
-                {
+                if let Some(file) = files.iter().find(|file| file.filename == self.artifact_path) {
                     self.progress.set_total_bytes(file.total_bytes);
                     self.progress.set_position(file.bytes_completed);
                 }
             }
 
-            DownloadEvent::AggregateProgress {
-                bytes_completed,
-                total_bytes,
-                ..
-            } => {
+            DownloadEvent::AggregateProgress { bytes_completed, total_bytes, .. } => {
                 self.progress.set_total_bytes(*total_bytes);
                 self.progress.set_position(*bytes_completed);
             }
