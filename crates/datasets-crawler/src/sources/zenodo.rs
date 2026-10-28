@@ -32,7 +32,7 @@ impl DatasetSource for ZenodoSource {
         formats: &'a [FileFormat],
         limit: Option<usize>,
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
-        const PAGE_SIZE: u32 = 100;
+        const PAGE_SIZE: u32 = 20;
 
         debug!(
             query = %query,
