@@ -47,7 +47,8 @@ The MVP should establish a core architecture for crawling datasets, determining 
     [x] download supported artifact
     [x] convert to CandidateArtifact
     [x] classify + index through Crawler
-    [ ] live end-to-end smoke test
+    [x] live end-to-end smoke test
+    [x] support for download info
     [ ] parquet tabular support
     [ ] plain text tabular support
 [ ] Zenodo
