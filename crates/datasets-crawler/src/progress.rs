@@ -12,7 +12,7 @@ pub struct DownloadProgress {
 impl DownloadProgress {
     /// Creates a progress display for download
     #[must_use]
-    pub fn new(total_bytes: u64, message: String) -> Self {
+    pub(crate) fn new(total_bytes: u64, message: String) -> Self {
         let progress_bar = if total_bytes > 0 {
             ProgressBar::new(total_bytes)
         } else {
@@ -27,8 +27,14 @@ impl DownloadProgress {
         Self { progress_bar }
     }
 
+    /// Returns a shared handle to underlying progress bar
+    #[must_use]
+    pub(crate) fn progress_bar(&self) -> ProgressBar {
+        self.progress_bar.clone()
+    }
+
     /// Sets expected download size when available
-    pub fn set_total_bytes(&self, total_bytes: u64) {
+    pub(crate) fn set_total_bytes(&self, total_bytes: u64) {
         if total_bytes == 0 {
             return;
         }
@@ -39,17 +45,17 @@ impl DownloadProgress {
     }
 
     /// Sets the cumulative number of bytes downloaded
-    pub fn set_position(&self, bytes_completed: u64) {
+    pub(crate) fn set_position(&self, bytes_completed: u64) {
         self.progress_bar.set_position(bytes_completed);
     }
 
     /// Marks download as successful
-    pub fn finish_with_message(&self, message: String) {
+    pub(crate) fn finish_with_message(&self, message: String) {
         self.progress_bar.finish_with_message(message);
     }
 
     /// Marks download unsuccessful
-    pub fn abandon_with_message(&self, message: String) {
+    pub(crate) fn abandon_with_message(&self, message: String) {
         self.progress_bar.abandon_with_message(message);
     }
 }

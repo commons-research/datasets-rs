@@ -16,6 +16,12 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 strum = { version = "0.28.0", features = ["derive"] }
 indicatif = "0.18.6"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+futures = "0.3.34"
+hf-hub = "1.0.0"
+tokio = { version = "1.54.0", features = ["fs", "macros", "rt-multi-thread"] }
+zenodo-rs = { version = "0.3.0", features = ["indicatif"] }
+tempfile = "3.27.0"
 
 [workspace.lints.rust]
 missing_docs = "deny"

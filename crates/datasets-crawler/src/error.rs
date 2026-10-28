@@ -16,6 +16,9 @@ pub enum CrawlerError {
     /// Error returned from Zenodo client
     #[error("Zenodo request failed: {0}")]
     Zenodo(#[from] zenodo_rs::ZenodoError),
+    /// Zenodo ID was invalid
+    #[error("invalid Zenodo record ID: {0}")]
+    InvalidZenodoRecordId(String),
     /// Reading downloaded artifact failed
     #[error("failed to read downloaded artifact: {0}")]
     Io(#[from] io::Error),

@@ -20,4 +20,4 @@ pub use crawler::{CandidateArtifact, Crawler};
 pub use error::CrawlerError;
 pub use index::{DatasetIndex, IndexedArtifact};
 pub use source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact};
-pub use sources::HuggingFaceSource;
+pub use sources::{HuggingFaceSource, ZenodoSource};
