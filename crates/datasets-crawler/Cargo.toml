@@ -18,6 +18,7 @@ thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 strum.workspace = true
+indicatif.workspace = true
 
 [lints]
 workspace = true

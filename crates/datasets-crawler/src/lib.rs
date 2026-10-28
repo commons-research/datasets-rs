@@ -12,6 +12,8 @@ mod index;
 mod source;
 /// Implementations for external dataset sources.
 mod sources;
+/// Tracking for dataset download progress
+mod progress;
 
 pub use crawl::{CrawlConfig, CrawlReport, crawl};
 pub use crawler::{CandidateArtifact, Crawler};

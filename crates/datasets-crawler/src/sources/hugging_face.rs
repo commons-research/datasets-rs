@@ -1,10 +1,12 @@
+use core::error;
+
 use futures::{StreamExt, TryStreamExt, future};
 use hf_hub::{
-    HFClient,
-    repository::{DatasetInfo, RepoTreeEntry},
-    split_id,
+    HFClient, progress::{self, DownloadEvent, ProgressEvent, ProgressHandler}, repository::{DatasetInfo, RepoTreeEntry, download}, split_id,
 };
 use tracing::debug;
+
+use crate::progress::DownloadProgress;
 
 use super::super::{
     error::CrawlerError,
@@ -101,24 +103,67 @@ impl DatasetSource for HuggingFaceSource {
             .collect())
     }
 
-    async fn download_artifact(
+async fn download_artifact(
         &self,
         dataset_id: &str,
         artifact: &SourceArtifact,
     ) -> Result<Vec<u8>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
 
-        debug!(dataset_id = %dataset_id, artifact_path = %artifact.path, "requesting Hugging Face artifact download");
+        debug!(
+            dataset_id = %dataset_id,
+            artifact_path = %artifact.path,
+            "requesting Hugging Face artifact download"
+        );
 
-        let cached_path = self
+        let progress_message = format!("{dataset_id}/{}", artifact.path);
+        let progress = DownloadProgress::new(artifact.size_bytes, progress_message);
+
+        let download_result = self
             .client
             .dataset(owner, name)
             .download_file()
             .filename(artifact.path.clone())
+            .progress(HuggingFaceProgressHandler::new(
+                progress.clone(),
+                artifact.path.clone(),
+            ))
             .send()
-            .await?;
+            .await;
 
-        Ok(tokio::fs::read(cached_path).await?)
+        let cached_path = match download_result {
+            Ok(path) => {
+                progress.finish_with_message(format!(
+                    "Downloaded {dataset_id}/{}",
+                    artifact.path
+                ));
+                path
+            }
+            Err(error) => {
+                progress.abandon_with_message(format!(
+                    "Download failed: {dataset_id}/{}",
+                    artifact.path
+                ));
+                return Err(error.into());
+            }
+        };
+
+        debug!(
+            dataset_id = %dataset_id,
+            artifact_path = %artifact.path,
+            "download completed; loading cached artifact into memory"
+        );
+
+        let bytes = tokio::fs::read(cached_path).await?;
+
+        debug!(
+            dataset_id = %dataset_id,
+            artifact_path = %artifact.path,
+            downloaded_bytes = bytes.len(),
+            "loaded cached artifact into memory"
+        );
+
+        Ok(bytes)
     }
 }
 
@@ -167,4 +212,59 @@ fn dataset_matches_formats(dataset: &DatasetInfo, requested_formats: &[FileForma
     requested_formats.iter().any(|format| {
         first_tag == format.as_str() || format_tags.clone().any(|tag| tag == format.as_str())
     })
+}
+
+
+/// Adapts HF download events to shared progress display 
+struct HuggingFaceProgressHandler {
+    /// Shared terminal progress display
+    progress: DownloadProgress,
+    /// Repository path of the artifact downloading
+    artifact_path: String,
+}
+
+impl HuggingFaceProgressHandler {
+    /// Creates a handler for artifact download
+    #[must_use]
+    fn new(progress: DownloadProgress, artifact_path: String) -> Self {
+        Self {
+            progress,
+            artifact_path,
+        }
+    }
+}
+
+impl ProgressHandler for HuggingFaceProgressHandler {
+    fn on_progress(&self, event: &ProgressEvent) {
+        let ProgressEvent::Download(event) = event else {
+            return;
+        };
+
+        match event {
+            DownloadEvent::Start { total_bytes, .. } => {
+                self.progress.set_total_bytes(*total_bytes);
+            }
+
+            DownloadEvent::Progress { files } => {
+                if let Some(file) = files
+                    .iter()
+                    .find(|file| file.filename == self.artifact_path)
+                {
+                    self.progress.set_total_bytes(file.total_bytes);
+                    self.progress.set_position(file.bytes_completed);
+                }
+            }
+
+            DownloadEvent::AggregateProgress {
+                bytes_completed,
+                total_bytes,
+                ..
+            } => {
+                self.progress.set_total_bytes(*total_bytes);
+                self.progress.set_position(*bytes_completed);
+            }
+
+            DownloadEvent::Complete => {}
+        }
+    }
 }
