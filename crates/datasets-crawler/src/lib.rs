@@ -15,7 +15,7 @@ mod source;
 /// Implementations for external dataset sources.
 mod sources;
 
-pub use crawl::{CrawlConfig, CrawlReport, crawl};
+pub use crawl::{CrawlConfig, CrawlReport, CrawlStatus, crawl};
 pub use crawler::{CandidateArtifact, Crawler};
 pub use error::CrawlerError;
 pub use index::{DatasetIndex, IndexedArtifact};

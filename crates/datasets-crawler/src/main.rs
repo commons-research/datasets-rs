@@ -4,7 +4,7 @@
 
 use datasets_core::ContentType;
 use datasets_crawler::{
-    CrawlConfig, Crawler, CrawlerError, HuggingFaceSource, ZenodoSource, crawl,
+    CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, ZenodoSource, crawl,
 };
 
 /// Command-line configuration.
@@ -12,7 +12,8 @@ mod cli;
 
 use cli::{Args, SourceArg};
 use tokio::runtime::Builder;
-use tracing::info;
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use self::cli::ResolvedArgs;
@@ -83,22 +84,64 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         "starting crawl",
     );
 
-    let report = match selected_source {
+    // Create the single cancellation token for this crawl.
+    let cancellation = CancellationToken::new();
+
+    // Give the signal handler a handle to the same cancellation state.
+    let signal_cancellation = cancellation.clone();
+
+    // Listen for Ctrl+C independently of the crawling operation.
+    let signal_task = tokio::spawn(async move {
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {
+                warn!("Ctrl+C received; requesting graceful shutdown");
+                signal_cancellation.cancel();
+            }
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    "failed to listen for Ctrl+C"
+                );
+            }
+        }
+    });
+
+    // Run the selected source.
+    let report_result = match selected_source {
         SourceArg::HuggingFace => {
-            let source = HuggingFaceSource::new()?;
-            crawl(&source, &config).await?
+            match HuggingFaceSource::new() {
+                Ok(source) => crawl(&source, &config, &cancellation).await,
+                Err(error) => Err(error),
+            }
         }
         SourceArg::Zenodo => {
-            let source = ZenodoSource::new()?;
-            crawl(&source, &config).await?
+            match ZenodoSource::new() {
+                Ok(source) => crawl(&source, &config, &cancellation).await,
+                Err(error) => Err(error),
+            }
         }
     };
+
+    // The crawl has finished; stop listening for signals.
+    signal_task.abort();
+
+    let report = report_result?;
 
     info!(
         index_artifacts = report.crawler().index().artifacts().count(),
         warning_count = report.warnings().len(),
+        crawl_status = ?report.status(),
         "crawl concluded",
     );
+
+    match report.status() {
+        CrawlStatus::Completed => {
+            info!("Crawl completed successfully");
+        }
+        CrawlStatus::Interrupted => {
+            warn!("Crawl interrupted; returning partial results");
+        }
+    }
 
     print_results(report.crawler(), &config.content_types);
 

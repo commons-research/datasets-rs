@@ -1,5 +1,5 @@
 use std::{collections::HashSet, path::Path};
-
+use tokio_util::sync::CancellationToken;
 use datasets_core::{ArtifactFormat, ContentType};
 use tracing::{debug, info, warn};
 
@@ -28,6 +28,15 @@ pub struct CrawlConfig {
     pub max_file_size_bytes: Option<u64>,
 }
 
+/// Current state of crawl
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrawlStatus {
+    /// Dataset query has been completed
+    Completed,
+    /// The crawl has not completed and has been cancelled
+    Interrupted,
+}
+
 /// Results and non-fatal issues produced by a crawl.
 #[derive(Debug)]
 pub struct CrawlReport {
@@ -35,6 +44,8 @@ pub struct CrawlReport {
     crawler: Crawler,
     /// Warnings for datasets or files that could not be processed.
     warnings: Vec<String>,
+    /// Indicates completion status of the crawl.
+    status: CrawlStatus,
 }
 
 impl CrawlReport {
@@ -48,6 +59,11 @@ impl CrawlReport {
     #[must_use]
     pub fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+    /// Returns status of the crawl.
+    #[must_use]
+    pub const fn status(&self) -> CrawlStatus {
+        self.status
     }
 }
 
@@ -91,7 +107,9 @@ struct DownloadedArtifact<'a> {
 pub async fn crawl<S: DatasetSource>(
     source: &S,
     config: &CrawlConfig,
+    cancellation: &CancellationToken,
 ) -> Result<CrawlReport, CrawlerError> {
+
     info!(
         content_types = ?config.content_types,
         formats = ?config.formats,
@@ -103,26 +121,61 @@ pub async fn crawl<S: DatasetSource>(
         "starting crawl"
     );
 
-    let datasets = discover_datasets(source, config).await?;
+    let (datasets, mut status) =
+        discover_datasets(source, config, &cancellation).await?;
+
     let discovered_dataset_count = datasets.len();
 
-    info!(dataset_count = discovered_dataset_count, "starting artifact inspection");
+    info!(
+        dataset_count = discovered_dataset_count,
+        "starting artifact inspection"
+    );
 
     let mut crawler = Crawler::new(&config.content_types);
     let mut warnings = Vec::new();
 
-    for dataset in datasets {
-        inspect_dataset(source, &dataset, config, &mut crawler, &mut warnings).await;
+    if status == CrawlStatus::Completed {
+        for dataset in &datasets {
+            if cancellation.is_cancelled() {
+                status = CrawlStatus::Interrupted;
+                break;
+            }
+
+            let interrupted = inspect_dataset(
+                source,
+                dataset,
+                config,
+                &mut crawler,
+                &mut warnings,
+                &cancellation,
+            )
+            .await;
+
+            if interrupted {
+                status = CrawlStatus::Interrupted;
+                break;
+            }
+        }
+    }
+
+    // Catch cancellation arriving just as the final operation completes.
+    if cancellation.is_cancelled() {
+        status = CrawlStatus::Interrupted;
     }
 
     info!(
-        discovered_dataset_count = discovered_dataset_count,
+        discovered_dataset_count,
         indexed_artifact_count = crawler.index().artifacts().count(),
         warning_count = warnings.len(),
-        "crawl completed"
+        crawl_status = ?status,
+        "crawl finished"
     );
 
-    Ok(CrawlReport { crawler, warnings })
+    Ok(CrawlReport {
+        crawler,
+        warnings,
+        status,
+    })
 }
 
 /// Inspects the supported artifacts in one dataset.
@@ -132,23 +185,46 @@ async fn inspect_dataset<S: DatasetSource>(
     config: &CrawlConfig,
     crawler: &mut Crawler,
     warnings: &mut Vec<String>,
-) {
+    cancellation: &CancellationToken,
+) -> bool {
     info!(
         dataset_id = %dataset.id,
         "inspecting discovered dataset"
     );
 
-    let artifacts = match source.list_artifacts(&dataset.id, config.max_tree_entries).await {
-        Ok(artifacts) => artifacts,
-        Err(error) => {
-            warn!(
+    let artifacts = tokio::select! {
+        biased;
+
+        _ = cancellation.cancelled() => {
+            info!(
                 dataset_id = %dataset.id,
-                error = %error,
-                "failed to list dataset artifacts; skipping dataset"
+                "interrupted while listing dataset artifacts",
             );
 
-            warnings.push(format!("Could not list artifacts for {}: {error}", dataset.id));
-            return;
+            return true;
+        }
+
+        result = source.list_artifacts(
+            &dataset.id,
+            config.max_tree_entries
+        ) => {
+            match result {
+                Ok(artifacts) => artifacts,
+                Err(error) => {
+                    warn!(
+                        dataset_id = %dataset.id,
+                        error = %error,
+                        "failed to list dataset artifacts; skipping dataset"
+                    );
+
+                    warnings.push(format!(
+                        "Could not list artifacts for {}: {error}",
+                        dataset.id
+                    ));
+
+                    return false
+                }
+            }
         }
     };
 
@@ -162,7 +238,15 @@ async fn inspect_dataset<S: DatasetSource>(
 
     let mut stats = DatasetStats::default();
 
-    for artifact in artifacts {
+    'artifact_loop: for artifact in artifacts {
+        if cancellation.is_cancelled() {
+            info!(
+                dataset_id = %dataset.id,
+                "interrupted while inspecting dataset",
+            );
+
+            break 'artifact_loop;
+        }
         if should_stop_for_artifact_limit(&dataset.id, config, &mut stats) {
             break;
         }
@@ -186,27 +270,40 @@ async fn inspect_dataset<S: DatasetSource>(
             "downloading supported artifact"
         );
 
-        let data = match source.download_artifact(&dataset.id, &artifact).await {
-            Ok(data) => {
-                stats.downloaded_artifacts += 1;
-                data
-            }
-            Err(error) => {
-                stats.download_failures += 1;
+        let data = tokio::select! {
+            biased;
 
-                warn!(
+            _ = cancellation.cancelled() => {
+                info!(
                     dataset_id = %dataset.id,
                     artifact_path = %artifact.path,
-                    error = %error,
-                    "failed to download artifact; skipping it"
+                    "interrupted while downloading artifact",
                 );
 
-                warnings.push(format!(
-                    "Could not download {} from {}: {error}",
-                    artifact.path, dataset.id
-                ));
+                break 'artifact_loop;
+            }
+            result = source.download_artifact(&dataset.id, &artifact) => {
+                match result {
+                    Ok(data) => {
+                        stats.downloaded_artifacts +=1;
+                        data
+                    }
+                    Err(error) => {
+                        stats.download_failures +=1;
+                        warn!(
+                            dataset_id = %dataset.id,
+                            artifact_path = %artifact.path,
+                            error = %error,
+                            "failed to download artifact; skipping artifact"
+                        );
 
-                continue;
+                        warnings.push(format!(
+                            "Could not download {} from {}: {error}", artifact.path, dataset.id
+                        ));
+
+                        continue 'artifact_loop;
+                    }
+                }
             }
         };
 
@@ -219,6 +316,7 @@ async fn inspect_dataset<S: DatasetSource>(
     }
 
     log_dataset_stats(&dataset.id, repository_artifact_count, &stats);
+    cancellation.is_cancelled()
 }
 
 /// Determines whether the configured artifact limit has been reached.
@@ -341,10 +439,11 @@ fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: 
 async fn discover_datasets<S: DatasetSource>(
     source: &S,
     config: &CrawlConfig,
-) -> Result<Vec<DatasetSummary>, CrawlerError> {
+    cancellation: &CancellationToken
+) -> Result<(Vec<DatasetSummary>, CrawlStatus), CrawlerError> {
     if config.max_datasets == Some(0) {
         info!("dataset limit is zero; skipping discovery");
-        return Ok(Vec::new());
+        return Ok((Vec::new(), CrawlStatus::Completed));
     }
 
     let terms = search_terms(&config.content_types, config.strict);
@@ -355,6 +454,8 @@ async fn discover_datasets<S: DatasetSource>(
 
     let mut datasets = Vec::new();
     let mut seen = HashSet::new();
+    let mut status = CrawlStatus::Completed;
+
 
     for term in terms {
         info!(
@@ -363,7 +464,24 @@ async fn discover_datasets<S: DatasetSource>(
             "searching dataset source"
         );
 
-        let results = source.search(&term, &config.formats, config.results_per_term).await?;
+        let results = tokio::select! {
+            biased;
+
+            _ = cancellation.cancelled() => {
+                info!(
+                    search_term = %term,
+                    "interrupted during dataset discovery"
+                );
+
+                status = CrawlStatus::Interrupted;
+                break;
+            }
+            result = source.search(
+                &term,
+                &config.formats,
+                config.results_per_term,
+            ) => result?,
+        };
         let result_count = results.len();
 
         info!(
@@ -377,6 +495,10 @@ async fn discover_datasets<S: DatasetSource>(
         let mut reached_limit = false;
 
         for dataset in results {
+            if cancellation.is_cancelled() {
+                status = CrawlStatus::Interrupted;
+                break;
+            }
             if !matches_filter_terms(&dataset, &config.filter_terms) {
                 filtered_out += 1;
 
@@ -412,6 +534,10 @@ async fn discover_datasets<S: DatasetSource>(
             }
         }
 
+        if status == CrawlStatus::Interrupted {
+            break;
+        }
+
         info!(
             search_term = %term,
             filtered_out,
@@ -433,7 +559,7 @@ async fn discover_datasets<S: DatasetSource>(
 
     info!(dataset_count = datasets.len(), "dataset discovery completed");
 
-    Ok(datasets)
+    Ok((datasets, status))
 }
 
 /// Builds unique search terms, interleaving terms across content types.

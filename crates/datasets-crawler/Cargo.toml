@@ -21,6 +21,7 @@ strum.workspace = true
 indicatif.workspace = true
 zenodo-rs.workspace = true
 tempfile.workspace = true
+tokio-util.workspace = true
 
 [lints]
 workspace = true
