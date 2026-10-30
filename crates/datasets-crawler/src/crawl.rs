@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary, FileFormat};
+use crate::SourceArtifact;
 
 /// Configuration for a repository-independent crawl.
 #[derive(Debug, Clone)]
@@ -89,6 +90,28 @@ struct DatasetStats {
     artifact_limit_reached: bool,
 }
 
+/// Tracks datasets collected during discovery
+#[derive(Debug, Default)]
+struct DiscoveryState {
+    /// Unique datasets discovered so far
+    datasets: Vec<DatasetSummary>,
+    /// IDs of datasets, to avoid duplication
+    seen: HashSet<String>,
+}
+
+/// Statistics collected while processing a response
+#[derive(Debug, Default)]
+struct SearchResultStats {
+    /// Number of datasets rejected by filters
+    filtered_out: usize,
+    /// Number of datasets already discovered in another search
+    duplicate_results: usize,
+    /// Dataset limit reached
+    reached_limit: bool,
+    /// Process interrupted
+    interrupted: bool,
+}
+
 /// A downloaded artifact ready for classification.
 struct DownloadedArtifact<'a> {
     /// Dataset containing the artifact.
@@ -121,19 +144,19 @@ pub async fn crawl<S: DatasetSource>(
         "starting crawl"
     );
 
-    let (datasets, mut status) = discover_datasets(source, config, cancellation).await?;
-
-    let discovered_dataset_count = datasets.len();
-
-    info!(dataset_count = discovered_dataset_count, "starting artifact inspection");
-
     let mut session = CrawlSession {
         source,
         config,
         cancellation,
         crawler: Crawler::new(&config.content_types),
-        warnings: Vec::new()
+        warnings: Vec::new(),
     };
+
+    let (datasets, mut status) = session.discover_datasets().await?;
+
+    let discovered_dataset_count = datasets.len();
+
+    info!(dataset_count = discovered_dataset_count, "starting artifact inspection");
 
     if status == CrawlStatus::Completed {
         for dataset in &datasets {
@@ -141,7 +164,7 @@ pub async fn crawl<S: DatasetSource>(
                 status = CrawlStatus::Interrupted;
                 break;
             }
-            if session.inspect_dataset(dataset).await {
+            if session.inspect_dataset(dataset).await == InspectionOutcome::Interrupted {
                 status = CrawlStatus::Interrupted;
                 break;
             }
@@ -153,12 +176,7 @@ pub async fn crawl<S: DatasetSource>(
         status = CrawlStatus::Interrupted;
     }
 
-    let CrawlSession {
-        crawler,
-        warnings,
-        ..
-    } = session;
-
+    let CrawlSession { crawler, warnings, .. } = session;
 
     info!(
         discovered_dataset_count,
@@ -173,153 +191,380 @@ pub async fn crawl<S: DatasetSource>(
 
 /// Holds the state and dependencies for the crawl.
 struct CrawlSession<'a, S: DatasetSource> {
+    /// Remote source of discoverable and retrievable datasets.
     source: &'a S,
+    /// Configuration for crawling data source.
     config: &'a CrawlConfig,
+    /// Token for tracking cancellation request of crawl.
     cancellation: &'a CancellationToken,
+    /// Crawler state that maintains index of classifications.
     crawler: Crawler,
+    /// Accumulated warnings encountered while crawling.
     warnings: Vec<String>,
+}
+
+/// Outcome of inspecting a dataset / artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InspectionOutcome {
+    /// Inspection completed without interruption
+    Completed,
+    /// Inspection was interrupted.
+    Interrupted,
 }
 
 impl<S: DatasetSource> CrawlSession<'_, S> {
     /// Inspects the supported artifacts in one dataset.
-async fn inspect_dataset(
-    &mut self,
-    dataset: &DatasetSummary,
-) -> bool {
-    info!(
-        dataset_id = %dataset.id,
-        "inspecting discovered dataset"
-    );
+    async fn inspect_dataset(&mut self, dataset: &DatasetSummary) -> InspectionOutcome {
+        info!(
+            dataset_id = %dataset.id,
+            "inspecting discovered dataset"
+        );
 
-    let artifacts = tokio::select! {
-        biased;
+        let Some(artifacts) = self.list_artifacts(dataset).await else {
+            return self.inspection_outcome();
+        };
 
-        () = self.cancellation.cancelled() => {
-            info!(
-                dataset_id = %dataset.id,
-                "interrupted while listing dataset artifacts",
-            );
+        let repository_artifact_count = artifacts.len();
 
-            return true;
-        }
+        info!(
+            dataset_id = %dataset.id,
+            artifact_count = repository_artifact_count,
+            "retrieved repository artifact list"
+        );
 
-        result = self.source.list_artifacts(
-            &dataset.id,
-            self.config.max_tree_entries
-        ) => {
-            match result {
-                Ok(artifacts) => artifacts,
-                Err(error) => {
-                    warn!(
-                        dataset_id = %dataset.id,
-                        error = %error,
-                        "failed to list dataset artifacts; skipping dataset"
-                    );
+        let mut stats = DatasetStats::default();
 
-                    self.warnings.push(format!(
-                        "Could not list artifacts for {}: {error}",
-                        dataset.id
-                    ));
+        for artifact in &artifacts {
+            if self.cancellation.is_cancelled() {
+                break;
+            }
 
-                    return false
-                }
+            if should_stop_for_artifact_limit(&dataset.id, self.config, &mut stats) {
+                break;
+            }
+            if self.inspect_artifact(dataset, artifact, &mut stats).await
+                == InspectionOutcome::Interrupted
+            {
+                break;
             }
         }
-    };
 
-    let repository_artifact_count = artifacts.len();
+        log_dataset_stats(&dataset.id, repository_artifact_count, &stats);
 
-    info!(
-        dataset_id = %dataset.id,
-        artifact_count = repository_artifact_count,
-        "retrieved repository artifact list"
-    );
+        self.inspection_outcome()
+    }
 
-    let mut stats = DatasetStats::default();
-
-    'artifact_loop: for artifact in artifacts {
+    /// Returns current inspection outcome
+    fn inspection_outcome(&self) -> InspectionOutcome {
         if self.cancellation.is_cancelled() {
-            info!(
-                dataset_id = %dataset.id,
-                "interrupted while inspecting dataset",
-            );
-
-            break 'artifact_loop;
+            InspectionOutcome::Interrupted
+        } else {
+            InspectionOutcome::Completed
         }
-        if should_stop_for_artifact_limit(&dataset.id, self.config, &mut stats) {
-            break;
-        }
+    }
 
+    /// Retrieves files available in dataset
+    async fn list_artifacts(&mut self, dataset: &DatasetSummary) -> Option<Vec<SourceArtifact>> {
+        let result = tokio::select! {
+            biased;
+
+            () = self.cancellation.cancelled() => {
+                info!(
+                    dataset_id = %dataset.id,
+                    "interrupted while listing dataset artifacts"
+                );
+
+                return None;
+            }
+            result = self.source.list_artifacts(
+                &dataset.id,
+                self.config.max_tree_entries
+            ) => result,
+        };
+
+        match result {
+            Ok(artifacts) => Some(artifacts),
+            Err(error) => {
+                warn!(
+                    dataset_id = %dataset.id,
+                    error = %error,
+                    "failed to list dataset artifacts; skipping dataset"
+                );
+
+                self.warnings.push(format!("Could not list artifacts for {}: {error}", dataset.id));
+                None
+            }
+        }
+    }
+
+    /// Inspects and classifies individual artifacts.
+    async fn inspect_artifact(
+        &mut self,
+        dataset: &DatasetSummary,
+        artifact: &SourceArtifact,
+        stats: &mut DatasetStats,
+    ) -> InspectionOutcome {
         let Some(format) = select_artifact_format(
             &dataset.id,
             &artifact.path,
             artifact.size_bytes,
             self.config,
-            &mut stats,
+            stats,
         ) else {
-            continue;
+            return InspectionOutcome::Completed;
+        };
+        stats.eligible_artifacts_attempted += 1;
+        let Some(data) = self.download_artifact(dataset, artifact, stats).await else {
+            return self.inspection_outcome();
         };
 
-        stats.eligible_artifacts_attempted += 1;
+        self.classify_and_index(
+            DownloadedArtifact { dataset, path: &artifact.path, format, data },
+            stats,
+        );
+        InspectionOutcome::Completed
+    }
 
+    /// Downloads an artifact from the remote dataset
+    async fn download_artifact(
+        &mut self,
+        dataset: &DatasetSummary,
+        artifact: &SourceArtifact,
+        stats: &mut DatasetStats,
+    ) -> Option<Vec<u8>> {
         debug!(
             dataset_id = %dataset.id,
             artifact_path = %artifact.path,
             artifact_size_bytes = artifact.size_bytes,
-            "downloading supported artifact"
+            "downloading supproted artifact"
         );
 
-        let data = tokio::select! {
+        let result = tokio::select! {
             biased;
 
             () = self.cancellation.cancelled() => {
                 info!(
                     dataset_id = %dataset.id,
                     artifact_path = %artifact.path,
-                    "interrupted while downloading artifact",
+                    "interrupted while downloading artifact"
                 );
-
-                break 'artifact_loop;
+                return None;
             }
-            result = self.source.download_artifact(&dataset.id, &artifact) => {
-                match result {
-                    Ok(data) => {
-                        stats.downloaded_artifacts +=1;
-                        data
-                    }
-                    Err(error) => {
-                        stats.download_failures +=1;
-                        warn!(
-                            dataset_id = %dataset.id,
-                            artifact_path = %artifact.path,
-                            error = %error,
-                            "failed to download artifact; skipping artifact"
-                        );
-
-                        self.warnings.push(format!(
-                            "Could not download {} from {}: {error}", artifact.path, dataset.id
-                        ));
-
-                        continue 'artifact_loop;
-                    }
-                }
-            }
+            result = self.source.download_artifact(
+                &dataset.id,
+                artifact
+            ) => result,
         };
 
-        classify_and_index(
-            self.crawler,
-            DownloadedArtifact { dataset, path: &artifact.path, format, data },
-            &mut stats,
-            self.warnings,
-        );
+        match result {
+            Ok(data) => {
+                stats.downloaded_artifacts += 1;
+                Some(data)
+            }
+            Err(error) => {
+                stats.download_failures += 1;
+                warn!(
+                    dataset_id = %dataset.id,
+                    artifact_path = %artifact.path,
+                    error = %error,
+                    "failed to download artifact; skipping artifact"
+                );
+                self.warnings.push(format!(
+                    "Could not download {} from {}: {error}",
+                    artifact.path, dataset.id,
+                ));
+                None
+            }
+        }
     }
 
-    log_dataset_stats(&dataset.id, repository_artifact_count, &stats);
-    self.cancellation.is_cancelled()
-}
-}
+    /// Classifies a downloaded artifact and adds its results to the index.
+    fn classify_and_index(&mut self, artifact: DownloadedArtifact<'_>, stats: &mut DatasetStats) {
+        let candidate = CandidateArtifact::new(
+            artifact.dataset.id.clone(),
+            artifact.dataset.url.clone(),
+            artifact.path.to_owned(),
+            artifact.format,
+            artifact.data,
+        );
 
+        match self.crawler.process(candidate) {
+            Ok(()) => {
+                stats.indexed_artifacts += 1;
 
+                debug!(
+                    dataset_id = %artifact.dataset.id,
+                    artifact_path = %artifact.path,
+                    "artifact classified and indexed"
+                );
+            }
+            Err(error) => {
+                stats.classification_failures += 1;
+
+                warn!(
+                    dataset_id = %artifact.dataset.id,
+                    artifact_path = %artifact.path,
+                    error = %error,
+                    "failed to classify artifact"
+                );
+
+                self.warnings.push(format!(
+                    "Could not classify {} from {}: {error}",
+                    artifact.path, artifact.dataset.id
+                ));
+            }
+        }
+    }
+
+    /// Searches for datasets using configured scientific search terms
+    ///
+    /// # Errors
+    /// - Returns [`CrawlerError`] if search fails
+    async fn discover_datasets(&self) -> Result<(Vec<DatasetSummary>, CrawlStatus), CrawlerError> {
+        if self.config.max_datasets == Some(0) {
+            info!("dataset limit is zero; skipping discovery");
+            return Ok((Vec::new(), CrawlStatus::Completed));
+        }
+        let terms = search_terms(&self.config.content_types, self.config.strict);
+
+        info!(
+            search_term_count = terms.len(),
+            strict = self.config.strict,
+            "prepared dataset search terms"
+        );
+
+        debug!(search_terms = ?terms, "dataset discovery search terms");
+
+        let mut state = DiscoveryState::default();
+        let mut status = CrawlStatus::Completed;
+
+        for term in terms {
+            let Some(results) = self.search_term(&term).await? else {
+                status = CrawlStatus::Interrupted;
+                break;
+            };
+            let result_stats = self.process_search_results(&term, results, &mut state);
+
+            if result_stats.interrupted {
+                status = CrawlStatus::Interrupted;
+                break;
+            }
+
+            info!(
+                search_term = %term,
+                filtered_out = result_stats.filtered_out,
+                duplicate_results = result_stats.duplicate_results,
+                unique_dataset_count = state.datasets.len(),
+                "processed dataset search results"
+            );
+
+            if result_stats.reached_limit {
+                info!(
+                    dataset_count = state.datasets.len(),
+                    max_datasets = self.config.max_datasets,
+                    "reached configured dataset discovery limit"
+                );
+                break;
+            }
+        }
+        if self.cancellation.is_cancelled() {
+            status = CrawlStatus::Interrupted;
+        }
+
+        info!(
+            dataset_count = state.datasets.len(),
+            crawl_status = ?status,
+            "dataset discovery completed"
+        );
+
+        Ok((state.datasets, status))
+    }
+
+    /// Searches source using one search term
+    ///
+    /// # Errors
+    /// - Returns [`CrawlError`] if search fails
+    async fn search_term(&self, term: &str) -> Result<Option<Vec<DatasetSummary>>, CrawlerError> {
+        info!(
+            search_term = %term,
+            result_limit = self.config.results_per_term,
+            "searching dataset source"
+        );
+
+        let results = tokio::select! {
+            biased;
+
+            () = self.cancellation.cancelled() => {
+                info!(
+                    search_term = %term,
+                    "interrupted during dataset discovery"
+                );
+                return Ok(None);
+            }
+            result = self.source.search(
+                term,
+                &self.config.formats,
+                self.config.results_per_term
+            ) => result?
+        };
+
+        info!(
+            search_term = %term,
+            result_count = results.len(),
+            "dataset search completed"
+        );
+
+        Ok(Some(results))
+    }
+
+    /// Filters and collects dataset returned from search
+    fn process_search_results(
+        &self,
+        term: &str,
+        results: Vec<DatasetSummary>,
+        state: &mut DiscoveryState,
+    ) -> SearchResultStats {
+        let mut search_stats = SearchResultStats::default();
+
+        for dataset in results {
+            if self.cancellation.is_cancelled() {
+                search_stats.interrupted = true;
+                break;
+            }
+
+            if !matches_filter_terms(&dataset, &self.config.filter_terms) {
+                search_stats.filtered_out += 1;
+                debug!(
+                    dataset_id = %dataset.id,
+                    search_term = %term,
+                    "dataset rejected by metadata filters"
+                );
+                continue;
+            }
+
+            if state.seen.insert(dataset.id.clone()) {
+                debug!(
+                    dataset_id = %dataset.id,
+                    search_term = %term,
+                    "discovered new dataset"
+                );
+
+                state.datasets.push(dataset);
+                if self.config.max_datasets.is_some_and(|limit| state.datasets.len() >= limit) {
+                    search_stats.reached_limit = true;
+                    break;
+                }
+            } else {
+                search_stats.duplicate_results += 1;
+                debug!(
+                    search_term = %term,
+                    "dataset already discovered by another search"
+                );
+            }
+        }
+        search_stats
+    }
+}
 
 /// Determines whether the configured artifact limit has been reached.
 fn should_stop_for_artifact_limit(
@@ -374,49 +619,6 @@ fn select_artifact_format(
     Some(format)
 }
 
-/// Classifies a downloaded artifact and adds its results to the index.
-fn classify_and_index(
-    crawler: &mut Crawler,
-    artifact: DownloadedArtifact<'_>,
-    stats: &mut DatasetStats,
-    warnings: &mut Vec<String>,
-) {
-    let candidate = CandidateArtifact::new(
-        artifact.dataset.id.clone(),
-        artifact.dataset.url.clone(),
-        artifact.path.to_owned(),
-        artifact.format,
-        artifact.data,
-    );
-
-    match crawler.process(candidate) {
-        Ok(()) => {
-            stats.indexed_artifacts += 1;
-
-            debug!(
-                dataset_id = %artifact.dataset.id,
-                artifact_path = %artifact.path,
-                "artifact classified and indexed"
-            );
-        }
-        Err(error) => {
-            stats.classification_failures += 1;
-
-            warn!(
-                dataset_id = %artifact.dataset.id,
-                artifact_path = %artifact.path,
-                error = %error,
-                "failed to classify artifact"
-            );
-
-            warnings.push(format!(
-                "Could not classify {} from {}: {error}",
-                artifact.path, artifact.dataset.id
-            ));
-        }
-    }
-}
-
 /// Logs the inspection statistics for a dataset.
 fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: &DatasetStats) {
     info!(
@@ -432,135 +634,6 @@ fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: 
         artifact_limit_reached = stats.artifact_limit_reached,
         "finished inspecting dataset"
     );
-}
-
-/// Searches for datasets using the configured scientific search terms.
-///
-/// # Errors
-/// - Returns [`CrawlerError`] if unable to search for datasets
-async fn discover_datasets<S: DatasetSource>(
-    source: &S,
-    config: &CrawlConfig,
-    cancellation: &CancellationToken,
-) -> Result<(Vec<DatasetSummary>, CrawlStatus), CrawlerError> {
-    if config.max_datasets == Some(0) {
-        info!("dataset limit is zero; skipping discovery");
-        return Ok((Vec::new(), CrawlStatus::Completed));
-    }
-
-    let terms = search_terms(&config.content_types, config.strict);
-
-    info!(search_term_count = terms.len(), strict = config.strict, "prepared dataset search terms");
-
-    debug!(search_terms = ?terms, "dataset discovery search terms");
-
-    let mut datasets = Vec::new();
-    let mut seen = HashSet::new();
-    let mut status = CrawlStatus::Completed;
-
-    for term in terms {
-        info!(
-            search_term = %term,
-            result_limit = config.results_per_term,
-            "searching dataset source"
-        );
-
-        let results = tokio::select! {
-            biased;
-
-            () = cancellation.cancelled() => {
-                info!(
-                    search_term = %term,
-                    "interrupted during dataset discovery"
-                );
-
-                status = CrawlStatus::Interrupted;
-                break;
-            }
-            result = source.search(
-                &term,
-                &config.formats,
-                config.results_per_term,
-            ) => result?,
-        };
-        let result_count = results.len();
-
-        info!(
-            search_term = %term,
-            result_count,
-            "dataset search completed"
-        );
-
-        let mut filtered_out = 0;
-        let mut duplicate_results = 0;
-        let mut reached_limit = false;
-
-        for dataset in results {
-            if cancellation.is_cancelled() {
-                status = CrawlStatus::Interrupted;
-                break;
-            }
-            if !matches_filter_terms(&dataset, &config.filter_terms) {
-                filtered_out += 1;
-
-                debug!(
-                    dataset_id = %dataset.id,
-                    search_term = %term,
-                    "dataset rejected by metadata filters"
-                );
-
-                continue;
-            }
-
-            if seen.insert(dataset.id.clone()) {
-                debug!(
-                    dataset_id = %dataset.id,
-                    search_term = %term,
-                    "discovered new dataset"
-                );
-
-                datasets.push(dataset);
-
-                if config.max_datasets.is_some_and(|limit| datasets.len() >= limit) {
-                    reached_limit = true;
-                    break;
-                }
-            } else {
-                duplicate_results += 1;
-
-                debug!(
-                    search_term = %term,
-                    "dataset already discovered by another search"
-                );
-            }
-        }
-
-        if status == CrawlStatus::Interrupted {
-            break;
-        }
-
-        info!(
-            search_term = %term,
-            filtered_out,
-            duplicate_results,
-            unique_dataset_count = datasets.len(),
-            "processed dataset search results"
-        );
-
-        if reached_limit {
-            info!(
-                dataset_count = datasets.len(),
-                max_datasets = config.max_datasets,
-                "reached configured dataset discovery limit"
-            );
-
-            break;
-        }
-    }
-
-    info!(dataset_count = datasets.len(), "dataset discovery completed");
-
-    Ok((datasets, status))
 }
 
 /// Builds unique search terms, interleaving terms across content types.
