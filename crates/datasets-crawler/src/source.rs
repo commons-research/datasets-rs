@@ -13,6 +13,8 @@ pub enum FileFormat {
     Csv,
     /// JSON document
     Json,
+    /// Plain text formatted files
+    PlainText
 }
 
 impl FileFormat {
@@ -22,13 +24,8 @@ impl FileFormat {
         match self {
             Self::Csv => "csv",
             Self::Json => "json",
+            Self::PlainText => "plain-text",
         }
-    }
-
-    /// Returns expected file extension
-    #[must_use]
-    pub const fn extension(self) -> &'static str {
-        self.as_str()
     }
 
     /// Returns structural artifact format
@@ -37,6 +34,7 @@ impl FileFormat {
         match self {
             Self::Csv => ArtifactFormat::Tabular,
             Self::Json => ArtifactFormat::Json,
+            Self::PlainText => ArtifactFormat::Tabular,
         }
     }
 
@@ -60,6 +58,7 @@ impl FromStr for FileFormat {
         match s.trim().to_ascii_lowercase().as_str() {
             "csv" => Ok(Self::Csv),
             "json" => Ok(Self::Json),
+            "txt" | "text" | "plain-text" => Ok(Self::PlainText),
             _ => Err(CrawlerError::ParseFileFormat(s.to_owned())),
         }
     }

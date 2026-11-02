@@ -2,7 +2,7 @@ use std::io::Read;
 
 use csv::Reader;
 
-use super::{Classification, CoreError, labeler::Labeler, visitor::Visitor};
+use super::super::{Classification, CoreError, labeler::Labeler, visitor::Visitor};
 
 /// Visits tabular dataset content
 pub struct TabularVisitor;

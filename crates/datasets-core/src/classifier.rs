@@ -3,7 +3,7 @@ use super::{
     json::JsonVisitor,
     labeler::Labeler,
     labels::{MolecularFormulaLabeler, SmilesLabeler},
-    tabular::TabularVisitor,
+    tabular::visitor::TabularVisitor,
     visitor::Visitor,
 };
 
