@@ -52,8 +52,8 @@ The MVP should establish a core architecture for crawling datasets, determining 
     [x] support for download info
     [ ] parquet tabular support
     [ ] plain text tabular support
+[ ] Meta-data independent discovery
 [ ] Zenodo
-[ ] evaluation
 
 ## Architecture
 
