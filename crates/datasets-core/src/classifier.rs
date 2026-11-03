@@ -3,7 +3,7 @@ use super::{
     json::JsonVisitor,
     labeler::Labeler,
     labels::{MolecularFormulaLabeler, SmilesLabeler},
-    tabular::{TabularVisitor, TabularDialect},
+    tabular::{TabularDialect, TabularVisitor},
     visitor::Visitor,
 };
 
@@ -60,14 +60,20 @@ pub fn classify_artifact(
     format: ArtifactFormat,
     content_types: &[ContentType],
 ) -> Result<Vec<Classification>, CoreError> {
+    let dialect = match format {
+        ArtifactFormat::Tabular => Some(TabularDialect::detect(data)?),
+        ArtifactFormat::Json => None,
+    };
+
     let mut classifications = Vec::new();
 
     for content_type in content_types {
         let results = match content_type {
-            ContentType::Smiles => classify_with_labeler(data, format, &SmilesLabeler)?,
-
+            ContentType::Smiles => {
+                classify_with_labeler(data, format, dialect.as_ref(), &SmilesLabeler)?
+            }
             ContentType::MolecularFormula => {
-                classify_with_labeler(data, format, &MolecularFormulaLabeler)?
+                classify_with_labeler(data, format, dialect.as_ref(), &MolecularFormulaLabeler)?
             }
         };
 
@@ -84,10 +90,13 @@ pub fn classify_artifact(
 fn classify_with_labeler<L: Labeler>(
     data: &[u8],
     format: ArtifactFormat,
+    dialect: Option<&TabularDialect>,
     labeler: &L,
 ) -> Result<Vec<Classification>, CoreError> {
     match format {
-        ArtifactFormat::Tabular => TabularVisitor::visit(data, labeler),
+        ArtifactFormat::Tabular => {
+            dialect.map_or_else(|| TabularVisitor::visit(data, labeler), |dialect| TabularVisitor::visit_with_dialect(data, labeler, *dialect))
+        }
         ArtifactFormat::Json => JsonVisitor::visit(data, labeler),
     }
 }

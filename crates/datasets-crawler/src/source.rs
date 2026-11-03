@@ -14,7 +14,7 @@ pub enum FileFormat {
     /// JSON document
     Json,
     /// Plain text formatted files
-    PlainText
+    PlainText,
 }
 
 impl FileFormat {
@@ -32,9 +32,8 @@ impl FileFormat {
     #[must_use]
     pub const fn artifact_format(self) -> ArtifactFormat {
         match self {
-            Self::Csv => ArtifactFormat::Tabular,
+            Self::Csv | Self::PlainText => ArtifactFormat::Tabular,
             Self::Json => ArtifactFormat::Json,
-            Self::PlainText => ArtifactFormat::Tabular,
         }
     }
 

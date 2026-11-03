@@ -2,7 +2,10 @@ use std::io::Read;
 
 use csv::ReaderBuilder;
 
-use super::{super::{Classification, CoreError, labeler::Labeler, visitor::Visitor}, TabularDialect};
+use super::{
+    super::{Classification, CoreError, labeler::Labeler, visitor::Visitor},
+    TabularDialect,
+};
 
 /// Visits tabular dataset content
 pub struct TabularVisitor;
@@ -15,9 +18,12 @@ impl TabularVisitor {
     pub(crate) fn visit_with_dialect<R: Read, L: Labeler>(
         reader: R,
         labeler: &L,
-        dialect: TabularDialect
+        dialect: TabularDialect,
     ) -> Result<Vec<Classification>, CoreError> {
-        let mut reader = ReaderBuilder::new().delimiter(dialect.delimiter()).has_headers(dialect.has_headers()).from_reader(reader);
+        let mut reader = ReaderBuilder::new()
+            .delimiter(dialect.delimiter())
+            .has_headers(dialect.has_headers())
+            .from_reader(reader);
         let column_names: Vec<String> = if dialect.has_headers() {
             reader.headers()?.iter().map(str::to_owned).collect()
         } else {
@@ -42,9 +48,13 @@ impl TabularVisitor {
             }
         }
 
-        Ok(column_names.into_iter().enumerate().map(|(index,name)| {
-            Classification::new(labeler.content_type(), name, inspected[index], valid[index])
-        }).collect())
+        Ok(column_names
+            .into_iter()
+            .enumerate()
+            .map(|(index, name)| {
+                Classification::new(labeler.content_type(), name, inspected[index], valid[index])
+            })
+            .collect())
     }
 }
 
