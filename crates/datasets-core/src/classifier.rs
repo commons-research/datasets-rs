@@ -95,7 +95,10 @@ fn classify_with_labeler<L: Labeler>(
 ) -> Result<Vec<Classification>, CoreError> {
     match format {
         ArtifactFormat::Tabular => {
-            dialect.map_or_else(|| TabularVisitor::visit(data, labeler), |dialect| TabularVisitor::visit_with_dialect(data, labeler, *dialect))
+            dialect.map_or_else(
+                || TabularVisitor::visit(data, labeler),
+                |dialect| TabularVisitor::visit_with_dialect(data, labeler, *dialect),
+            )
         }
         ArtifactFormat::Json => JsonVisitor::visit(data, labeler),
     }
