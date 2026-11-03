@@ -1,3 +1,5 @@
-pub mod visitor;
-pub mod dialect;
+mod visitor;
+mod dialect;
 
+pub(crate) use dialect::TabularDialect;
+pub(crate) use visitor::TabularVisitor;

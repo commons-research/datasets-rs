@@ -1,11 +1,52 @@
 use std::io::Read;
 
-use csv::Reader;
+use csv::ReaderBuilder;
 
-use super::super::{Classification, CoreError, labeler::Labeler, visitor::Visitor};
+use super::{super::{Classification, CoreError, labeler::Labeler, visitor::Visitor}, TabularDialect};
 
 /// Visits tabular dataset content
 pub struct TabularVisitor;
+
+impl TabularVisitor {
+    /// Inspects tabular data using a configured [`TabularDialect`].
+    ///
+    /// # Errors
+    /// - Returns [`CoreError`] when the tabular input cannot be parsed.
+    pub(crate) fn visit_with_dialect<R: Read, L: Labeler>(
+        reader: R,
+        labeler: &L,
+        dialect: TabularDialect
+    ) -> Result<Vec<Classification>, CoreError> {
+        let mut reader = ReaderBuilder::new().delimiter(dialect.delimiter()).has_headers(dialect.has_headers()).from_reader(reader);
+        let column_names: Vec<String> = if dialect.has_headers() {
+            reader.headers()?.iter().map(str::to_owned).collect()
+        } else {
+            let column_count = reader.headers()?.len();
+            (0..column_count).map(|index| format!("column_{index}")).collect()
+        };
+
+        let mut inspected = vec![0; column_names.len()];
+        let mut valid = vec![0; column_names.len()];
+        for record in reader.records() {
+            let record = record?;
+            for (index, value) in record.iter().enumerate() {
+                if value.trim().is_empty() {
+                    continue;
+                }
+
+                inspected[index] += 1;
+
+                if labeler.is_valid(value) {
+                    valid[index] += 1;
+                }
+            }
+        }
+
+        Ok(column_names.into_iter().enumerate().map(|(index,name)| {
+            Classification::new(labeler.content_type(), name, inspected[index], valid[index])
+        }).collect())
+    }
+}
 
 impl Visitor for TabularVisitor {
     /// Inspects tabular data using the provided scientific labeler.
@@ -16,34 +57,7 @@ impl Visitor for TabularVisitor {
         reader: R,
         labeler: &L,
     ) -> Result<Vec<Classification>, CoreError> {
-        let mut reader = Reader::from_reader(reader);
-        let headers = reader.headers()?.clone();
-
-        let mut inspected = vec![0; headers.len()];
-        let mut valid = vec![0; headers.len()];
-
-        for record in reader.records() {
-            let record = record?;
-
-            for (index, value) in record.iter().enumerate() {
-                if value.trim().is_empty() {
-                    continue;
-                }
-                inspected[index] += 1;
-
-                if labeler.is_valid(value) {
-                    valid[index] += 1;
-                }
-            }
-        }
-        let classifications = headers
-            .iter()
-            .enumerate()
-            .map(|(index, header)| {
-                Classification::new(labeler.content_type(), header, inspected[index], valid[index])
-            })
-            .collect();
-        Ok(classifications)
+        Self::visit_with_dialect(reader, labeler, TabularDialect::csv())
     }
 }
 
