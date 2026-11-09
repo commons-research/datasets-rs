@@ -32,19 +32,23 @@ impl HuggingFaceSource {
 impl DatasetSource for HuggingFaceSource {
     async fn search(
         &self,
-        query: &str,
+        query: Option<&str>,
         formats: &[FileFormat],
         limit: Option<usize>,
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
+        let search_query = match query {
+            Some(term) => term,
+            None => "none"
+        };
         debug!(
-            query = %query,
+            query = %search_query,
             formats = ?formats,
             limit = ?limit,
             "querying Hugging Face dataset search"
         );
 
         let stream =
-            self.client.list_datasets().search(query).full(true).send()?.try_filter(|dataset| {
+            self.client.list_datasets().maybe_search(query).full(true).send()?.try_filter(|dataset| {
                 let matches = dataset_matches_formats(dataset, formats);
 
                 if !matches {
@@ -63,7 +67,7 @@ impl DatasetSource for HuggingFaceSource {
         };
 
         debug!(
-            query = %query,
+            query = %search_query,
             matching_datasets = datasets.len(),
             "finished Hugging Face metadata filtering"
         );

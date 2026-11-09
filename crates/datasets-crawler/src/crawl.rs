@@ -16,12 +16,10 @@ pub struct CrawlConfig {
     pub formats: Vec<FileFormat>,
     /// Search only the canonical term for each content type.
     pub strict: bool,
-    /// Additional metadata terms that must all match.
+    /// Optional additional metadata terms that must all match.
     pub filter_terms: Vec<String>,
     /// Maximum number of unique datasets to inspect.
     pub max_datasets: Option<usize>,
-    /// Maximum results returned per search term.
-    pub results_per_term: Option<usize>,
     /// Maximum repository entries retrieved per dataset.
     pub max_tree_entries: Option<usize>,
     /// Maximum artifacts inspected per dataset.
@@ -137,7 +135,6 @@ pub async fn crawl<S: DatasetSource>(
         content_types = ?config.content_types,
         formats = ?config.formats,
         max_datasets = config.max_datasets,
-        results_per_term = config.results_per_term,
         max_tree_entries = config.max_tree_entries,
         max_artifacts_per_dataset = config.max_artifacts_per_dataset,
         max_file_size_bytes = config.max_file_size_bytes,
@@ -263,7 +260,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         }
     }
 
-    /// Retrieves files available in dataset
+    /// Retrieves files available in dataset repository. 
     async fn list_artifacts(&mut self, dataset: &DatasetSummary) -> Option<Vec<SourceArtifact>> {
         let result = tokio::select! {
             biased;
@@ -336,7 +333,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             dataset_id = %dataset.id,
             artifact_path = %artifact.path,
             artifact_size_bytes = artifact.size_bytes,
-            "downloading supproted artifact"
+            "downloading supported artifact"
         );
 
         let result = tokio::select! {
@@ -487,7 +484,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     async fn search_term(&self, term: &str) -> Result<Option<Vec<DatasetSummary>>, CrawlerError> {
         info!(
             search_term = %term,
-            result_limit = self.config.results_per_term,
             "searching dataset source"
         );
 
@@ -504,7 +500,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             result = self.source.search(
                 term,
                 &self.config.formats,
-                self.config.results_per_term
             ) => result?
         };
 
