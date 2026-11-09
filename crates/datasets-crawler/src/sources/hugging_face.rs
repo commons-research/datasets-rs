@@ -78,11 +78,8 @@ impl DatasetSource for HuggingFaceSource {
     async fn list_artifacts(
         &self,
         dataset_id: &str,
-        limit: Option<usize>,
     ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
-
-        debug!(dataset_id = %dataset_id, limit, "requesting Hugging Face repo tree");
 
         let entries: Vec<RepoTreeEntry> = self
             .client
@@ -90,7 +87,6 @@ impl DatasetSource for HuggingFaceSource {
             .list_tree()
             .recursive(true)
             .expand(true)
-            .maybe_limit(limit)
             .send()?
             .try_collect()
             .await?;

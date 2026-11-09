@@ -28,14 +28,17 @@ impl ZenodoSource {
 impl DatasetSource for ZenodoSource {
     async fn search<'a>(
         &'a self,
-        query: &'a str,
+        query: Option<&'a str>,
         formats: &'a [FileFormat],
         limit: Option<usize>,
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
         const PAGE_SIZE: u32 = 20;
-
+        let search_query = match query {
+            Some(term) => term,
+            None => "none"
+        };
         debug!(
-            query = %query,
+            query = %search_query,
             formats = ?formats,
             limit = ?limit,
             "querying Zenodo record search"
@@ -55,7 +58,6 @@ impl DatasetSource for ZenodoSource {
             });
 
             let record_query = RecordQuery::builder()
-                .query(query)
                 .published()
                 .most_recent()
                 .page(page_number)
@@ -92,7 +94,7 @@ impl DatasetSource for ZenodoSource {
         }
 
         debug!(
-            query = %query,
+            query = %search_query,
             matching_datasets = datasets.len(),
             "finished Zenodo record search"
         );
@@ -103,20 +105,14 @@ impl DatasetSource for ZenodoSource {
     async fn list_artifacts<'a>(
         &'a self,
         dataset_id: &'a str,
-        limit: Option<usize>,
     ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let record_id = parse_record_id(dataset_id)?;
         debug!(
             dataset_id = %dataset_id,
-            limit = ?limit,
             "requesting Zenodo record files"
         );
         let files = self.client.list_record_files(record_id).await?;
 
-        let files = match limit {
-            Some(limit) => files.into_iter().take(limit).collect(),
-            None => files,
-        };
         Ok(files
             .into_iter()
             .map(|file| SourceArtifact { path: file.key, size_bytes: file.size })

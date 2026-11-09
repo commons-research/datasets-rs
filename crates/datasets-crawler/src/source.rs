@@ -103,7 +103,6 @@ pub trait DatasetSource: Send + Sync {
     fn list_artifacts<'a>(
         &'a self,
         dataset_id: &'a str,
-        limit: Option<usize>,
     ) -> impl Future<Output = Result<Vec<SourceArtifact>, CrawlerError>> + Send + 'a;
 
     /// Downloads an artifact and returns content

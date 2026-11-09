@@ -12,20 +12,12 @@ use crate::SourceArtifact;
 pub struct CrawlConfig {
     /// Scientific content types to seek.
     pub content_types: Vec<ContentType>,
-    /// Artifact formats to inspect.
-    pub formats: Vec<FileFormat>,
-    /// Search only the canonical term for each content type.
-    pub strict: bool,
-    /// Optional additional metadata terms that must all match.
-    pub filter_terms: Vec<String>,
-    /// Maximum number of unique datasets to inspect.
-    pub max_datasets: Option<usize>,
-    /// Maximum repository entries retrieved per dataset.
-    pub max_tree_entries: Option<usize>,
-    /// Maximum artifacts inspected per dataset.
-    pub max_artifacts_per_dataset: Option<usize>,
-    /// Maximum permitted artifact size in bytes.
-    pub max_file_size_bytes: Option<u64>,
+    /// Optional file-format restrictions, if none provided will crawl supported file types.
+    pub formats: Option<Vec<FileFormat>>,
+    /// Optional search terms, if none provided will search all available repositories.
+    pub search_terms: Option<Vec<String>>,
+    /// Maximum number of repositories to inspect, if not provided will crawl all available repositories.
+    pub max_repositories: Option<usize>,
 }
 
 /// Current state of crawl
@@ -67,26 +59,20 @@ impl CrawlReport {
     }
 }
 
+
 /// Statistics collected while inspecting one dataset.
 #[derive(Debug, Default)]
 struct DatasetStats {
-    /// Number of supported artifacts attempted.
-    eligible_artifacts_attempted: usize,
-    /// Number of artifacts successfully downloaded.
-    downloaded_artifacts: usize,
-    /// Number of artifacts successfully processed by the crawler.
+    /// Number of artifacts successfully classified and indexed.
     indexed_artifacts: usize,
     /// Number of artifacts skipped because their format was unsupported.
     skipped_unsupported_format: usize,
-    /// Number of artifacts skipped because they exceeded the size limit.
-    skipped_oversized: usize,
     /// Number of artifact downloads that failed.
     download_failures: usize,
     /// Number of artifact classification attempts that failed.
     classification_failures: usize,
-    /// Whether the configured artifact limit stopped inspection.
-    artifact_limit_reached: bool,
 }
+
 
 /// Tracks datasets collected during discovery
 #[derive(Debug, Default)]
@@ -131,15 +117,15 @@ pub async fn crawl<S: DatasetSource>(
     config: &CrawlConfig,
     cancellation: &CancellationToken,
 ) -> Result<CrawlReport, CrawlerError> {
+
     info!(
         content_types = ?config.content_types,
         formats = ?config.formats,
-        max_datasets = config.max_datasets,
-        max_tree_entries = config.max_tree_entries,
-        max_artifacts_per_dataset = config.max_artifacts_per_dataset,
-        max_file_size_bytes = config.max_file_size_bytes,
+        search_terms = ?config.search_terms,
+        max_repositories = config.max_repositories,
         "starting crawl"
     );
+
 
     let mut session = CrawlSession {
         source,
@@ -236,9 +222,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 break;
             }
 
-            if should_stop_for_artifact_limit(&dataset.id, self.config, &mut stats) {
-                break;
-            }
             if self.inspect_artifact(dataset, artifact, &mut stats).await
                 == InspectionOutcome::Interrupted
             {
@@ -275,7 +258,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             }
             result = self.source.list_artifacts(
                 &dataset.id,
-                self.config.max_tree_entries
             ) => result,
         };
 
@@ -310,7 +292,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         ) else {
             return InspectionOutcome::Completed;
         };
-        stats.eligible_artifacts_attempted += 1;
         let Some(data) = self.download_artifact(dataset, artifact, stats).await else {
             return self.inspection_outcome();
         };
@@ -355,7 +336,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
         match result {
             Ok(data) => {
-                stats.downloaded_artifacts += 1;
                 Some(data)
             }
             Err(error) => {
@@ -418,15 +398,21 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     /// # Errors
     /// - Returns [`CrawlerError`] if search fails
     async fn discover_datasets(&self) -> Result<(Vec<DatasetSummary>, CrawlStatus), CrawlerError> {
-        if self.config.max_datasets == Some(0) {
-            info!("dataset limit is zero; skipping discovery");
+        if self.config.max_repositories == Some(0) {
+            info!("repository limit is zero; skipping discovery");
             return Ok((Vec::new(), CrawlStatus::Completed));
         }
-        let terms = search_terms(&self.config.content_types, self.config.strict);
+        
+        let terms: Vec<Option<&str>> = match self.config.search_terms.as_deref() {
+            Some(terms) if !terms.is_empty() => {
+                terms.iter().map(|term| Some(term.as_str())).collect()
+            }
+            _ => vec![None],
+        };
+
 
         info!(
             search_term_count = terms.len(),
-            strict = self.config.strict,
             "prepared dataset search terms"
         );
 
@@ -436,11 +422,11 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         let mut status = CrawlStatus::Completed;
 
         for term in terms {
-            let Some(results) = self.search_term(&term).await? else {
+            let Some(results) = self.search_term(term).await? else {
                 status = CrawlStatus::Interrupted;
                 break;
             };
-            let result_stats = self.process_search_results(&term, results, &mut state);
+            let result_stats = self.process_search_results(term, results, &mut state);
 
             if result_stats.interrupted {
                 status = CrawlStatus::Interrupted;
@@ -448,8 +434,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             }
 
             info!(
-                search_term = %term,
-                filtered_out = result_stats.filtered_out,
+                search_term = ?term,
                 duplicate_results = result_stats.duplicate_results,
                 unique_dataset_count = state.datasets.len(),
                 "processed dataset search results"
@@ -458,7 +443,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             if result_stats.reached_limit {
                 info!(
                     dataset_count = state.datasets.len(),
-                    max_datasets = self.config.max_datasets,
+                    max_repositories = self.config.max_repositories,
                     "reached configured dataset discovery limit"
                 );
                 break;
@@ -477,13 +462,13 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         Ok((state.datasets, status))
     }
 
-    /// Searches source using one search term
+    /// Searches the dataset source using an optional search term.
     ///
     /// # Errors
-    /// - Returns [`CrawlError`] if search fails
-    async fn search_term(&self, term: &str) -> Result<Option<Vec<DatasetSummary>>, CrawlerError> {
+    /// - Returns [`CrawlerError`] if the search fails.
+    async fn search_term(&self, term: Option<&str>) -> Result<Option<Vec<DatasetSummary>>, CrawlerError> {
         info!(
-            search_term = %term,
+            search_term = ?term,
             "searching dataset source"
         );
 
@@ -492,19 +477,20 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
             () = self.cancellation.cancelled() => {
                 info!(
-                    search_term = %term,
+                    search_term = ?term,
                     "interrupted during dataset discovery"
                 );
                 return Ok(None);
             }
             result = self.source.search(
                 term,
-                &self.config.formats,
+                self.config.formats.as_deref().unwrap_or(&[]),
+                self.config.max_repositories,
             ) => result?
         };
 
         info!(
-            search_term = %term,
+            search_term = ?term,
             result_count = results.len(),
             "dataset search completed"
         );
@@ -561,27 +547,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     }
 }
 
-/// Determines whether the configured artifact limit has been reached.
-fn should_stop_for_artifact_limit(
-    dataset_id: &str,
-    config: &CrawlConfig,
-    stats: &mut DatasetStats,
-) -> bool {
-    let Some(limit) = config.max_artifacts_per_dataset else {
-        return false;
-    };
-
-    if stats.eligible_artifacts_attempted < limit {
-        return false;
-    }
-
-    stats.artifact_limit_reached = true;
-
-    debug!(dataset_id, max_artifacts_per_dataset = limit, "stopping at configured artifact limit");
-
-    true
-}
-
 /// Selects an artifact for inspection if its format and size are supported.
 fn select_artifact_format(
     dataset_id: &str,
@@ -632,7 +597,7 @@ fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: 
 }
 
 /// Builds unique search terms, interleaving terms across content types.
-fn search_terms(content_types: &[ContentType], strict: bool) -> Vec<String> {
+fn search_terms(content_types: &[ContentType]) -> Vec<String> {
     let mut terms = Vec::new();
     let mut seen = HashSet::new();
 
