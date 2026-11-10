@@ -38,7 +38,7 @@ impl DatasetSource for HuggingFaceSource {
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
         let search_query = match query {
             Some(term) => term,
-            None => "none"
+            None => "none",
         };
         debug!(
             query = %search_query,
@@ -47,8 +47,8 @@ impl DatasetSource for HuggingFaceSource {
             "querying Hugging Face dataset search"
         );
 
-        let stream =
-            self.client.list_datasets().maybe_search(query).full(true).send()?.try_filter(|dataset| {
+        let stream = self.client.list_datasets().maybe_search(query).full(true).send()?.try_filter(
+            |dataset| {
                 let matches = dataset_matches_formats(dataset, formats);
 
                 if !matches {
@@ -59,7 +59,8 @@ impl DatasetSource for HuggingFaceSource {
                     );
                 }
                 future::ready(matches)
-            });
+            },
+        );
 
         let datasets: Vec<DatasetInfo> = match limit {
             Some(limit) => stream.take(limit).try_collect().await?,
@@ -75,10 +76,7 @@ impl DatasetSource for HuggingFaceSource {
         Ok(datasets.iter().map(dataset_summary).collect())
     }
 
-    async fn list_artifacts(
-        &self,
-        dataset_id: &str,
-    ) -> Result<Vec<SourceArtifact>, CrawlerError> {
+    async fn list_artifacts(&self, dataset_id: &str) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
 
         let entries: Vec<RepoTreeEntry> = self

@@ -12,11 +12,14 @@ use crate::SourceArtifact;
 pub struct CrawlConfig {
     /// Scientific content types to seek.
     pub content_types: Vec<ContentType>,
-    /// Optional file-format restrictions, if none provided will crawl supported file types.
+    /// Optional file-format restrictions, if none provided will crawl supported
+    /// file types.
     pub formats: Option<Vec<FileFormat>>,
-    /// Optional search terms, if none provided will search all available repositories.
+    /// Optional search terms, if none provided will search all available
+    /// repositories.
     pub search_terms: Option<Vec<String>>,
-    /// Maximum number of repositories to inspect, if not provided will crawl all available repositories.
+    /// Maximum number of repositories to inspect, if not provided will crawl
+    /// all available repositories.
     pub max_repositories: Option<usize>,
 }
 
@@ -59,7 +62,6 @@ impl CrawlReport {
     }
 }
 
-
 /// Statistics collected while inspecting one dataset.
 #[derive(Debug, Default)]
 struct DatasetStats {
@@ -73,7 +75,6 @@ struct DatasetStats {
     classification_failures: usize,
 }
 
-
 /// Tracks datasets collected during discovery
 #[derive(Debug, Default)]
 struct DiscoveryState {
@@ -86,8 +87,6 @@ struct DiscoveryState {
 /// Statistics collected while processing a response
 #[derive(Debug, Default)]
 struct SearchResultStats {
-    /// Number of datasets rejected by filters
-    filtered_out: usize,
     /// Number of datasets already discovered in another search
     duplicate_results: usize,
     /// Dataset limit reached
@@ -117,7 +116,6 @@ pub async fn crawl<S: DatasetSource>(
     config: &CrawlConfig,
     cancellation: &CancellationToken,
 ) -> Result<CrawlReport, CrawlerError> {
-
     info!(
         content_types = ?config.content_types,
         formats = ?config.formats,
@@ -125,7 +123,6 @@ pub async fn crawl<S: DatasetSource>(
         max_repositories = config.max_repositories,
         "starting crawl"
     );
-
 
     let mut session = CrawlSession {
         source,
@@ -243,7 +240,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         }
     }
 
-    /// Retrieves files available in dataset repository. 
+    /// Retrieves files available in dataset repository.
     async fn list_artifacts(&mut self, dataset: &DatasetSummary) -> Option<Vec<SourceArtifact>> {
         let result = tokio::select! {
             biased;
@@ -283,13 +280,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         artifact: &SourceArtifact,
         stats: &mut DatasetStats,
     ) -> InspectionOutcome {
-        let Some(format) = select_artifact_format(
-            &dataset.id,
-            &artifact.path,
-            artifact.size_bytes,
-            self.config,
-            stats,
-        ) else {
+        let Some(format) = select_artifact_format(&dataset.id, &artifact.path, self.config, stats)
+        else {
             return InspectionOutcome::Completed;
         };
         let Some(data) = self.download_artifact(dataset, artifact, stats).await else {
@@ -335,9 +327,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         };
 
         match result {
-            Ok(data) => {
-                Some(data)
-            }
+            Ok(data) => Some(data),
             Err(error) => {
                 stats.download_failures += 1;
                 warn!(
@@ -402,7 +392,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             info!("repository limit is zero; skipping discovery");
             return Ok((Vec::new(), CrawlStatus::Completed));
         }
-        
+
         let terms: Vec<Option<&str>> = match self.config.search_terms.as_deref() {
             Some(terms) if !terms.is_empty() => {
                 terms.iter().map(|term| Some(term.as_str())).collect()
@@ -410,11 +400,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             _ => vec![None],
         };
 
-
-        info!(
-            search_term_count = terms.len(),
-            "prepared dataset search terms"
-        );
+        info!(search_term_count = terms.len(), "prepared dataset search terms");
 
         debug!(search_terms = ?terms, "dataset discovery search terms");
 
@@ -466,7 +452,10 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     ///
     /// # Errors
     /// - Returns [`CrawlerError`] if the search fails.
-    async fn search_term(&self, term: Option<&str>) -> Result<Option<Vec<DatasetSummary>>, CrawlerError> {
+    async fn search_term(
+        &self,
+        term: Option<&str>,
+    ) -> Result<Option<Vec<DatasetSummary>>, CrawlerError> {
         info!(
             search_term = ?term,
             "searching dataset source"
@@ -484,7 +473,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             }
             result = self.source.search(
                 term,
-                self.config.formats.as_deref().unwrap_or(&[]),
+                self.config.formats.as_deref(),
                 self.config.max_repositories,
             ) => result?
         };
@@ -498,10 +487,10 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         Ok(Some(results))
     }
 
-    /// Filters and collects dataset returned from search
+    /// Collects unique datasets returned by a search.
     fn process_search_results(
         &self,
-        term: &str,
+        term: Option<&str>,
         results: Vec<DatasetSummary>,
         state: &mut DiscoveryState,
     ) -> SearchResultStats {
@@ -512,71 +501,67 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 search_stats.interrupted = true;
                 break;
             }
-
-            if !matches_filter_terms(&dataset, &self.config.filter_terms) {
-                search_stats.filtered_out += 1;
-                debug!(
-                    dataset_id = %dataset.id,
-                    search_term = %term,
-                    "dataset rejected by metadata filters"
-                );
-                continue;
-            }
-
             if state.seen.insert(dataset.id.clone()) {
                 debug!(
                     dataset_id = %dataset.id,
-                    search_term = %term,
+                    search_term = ?term,
                     "discovered new dataset"
                 );
 
                 state.datasets.push(dataset);
-                if self.config.max_datasets.is_some_and(|limit| state.datasets.len() >= limit) {
+
+                if self.config.max_repositories.is_some_and(|limit| state.datasets.len() >= limit) {
                     search_stats.reached_limit = true;
                     break;
                 }
             } else {
                 search_stats.duplicate_results += 1;
-                debug!(
-                    search_term = %term,
-                    "dataset already discovered by another search"
-                );
+                debug!(search_term = ?term, "dataset already discovered by another search");
             }
         }
         search_stats
     }
 }
 
-/// Selects an artifact for inspection if its format and size are supported.
+/// Selects an artifact for inspection if its format is supported and permitted.
 fn select_artifact_format(
     dataset_id: &str,
     artifact_path: &str,
-    artifact_size_bytes: u64,
     config: &CrawlConfig,
     stats: &mut DatasetStats,
 ) -> Option<ArtifactFormat> {
-    let Some(format) = artifact_format_for_path(artifact_path, &config.formats) else {
+    let Some(extension) = Path::new(artifact_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+    else {
         stats.skipped_unsupported_format += 1;
-
-        debug!(dataset_id, artifact_path, "skipping unsupported artifact format");
-
+        debug!(dataset_id, artifact_path, "skipping artifact with unknown format");
         return None;
     };
 
-    if config.max_file_size_bytes.is_some_and(|limit| artifact_size_bytes > limit) {
-        stats.skipped_oversized += 1;
+    let file_format = match extension.as_str() {
+        "csv" => FileFormat::Csv,
+        "json" => FileFormat::Json,
+        "txt" | "text" | "plain-text" => FileFormat::PlainText,
+        _ => {
+            stats.skipped_unsupported_format += 1;
+            debug!(dataset_id, artifact_path, "skipping unsupported artifact format");
+            return None;
+        }
+    };
+
+    if config.formats.as_ref().is_some_and(|formats| !formats.contains(&file_format)) {
         debug!(
             dataset_id,
             artifact_path,
-            artifact_size_bytes,
-            max_file_size_bytes = config.max_file_size_bytes,
-            "skipping oversized artifact"
+            file_format = %file_format,
+            "skipping artifact due to format restriction"
         );
-
         return None;
     }
 
-    Some(format)
+    Some(file_format.artifact_format())
 }
 
 /// Logs the inspection statistics for a dataset.
@@ -584,75 +569,10 @@ fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: 
     info!(
         dataset_id,
         repository_artifact_count,
-        eligible_artifacts_attempted = stats.eligible_artifacts_attempted,
-        downloaded_artifacts = stats.downloaded_artifacts,
         indexed_artifacts = stats.indexed_artifacts,
         skipped_unsupported_format = stats.skipped_unsupported_format,
-        skipped_oversized = stats.skipped_oversized,
         download_failures = stats.download_failures,
         classification_failures = stats.classification_failures,
-        artifact_limit_reached = stats.artifact_limit_reached,
         "finished inspecting dataset"
     );
-}
-
-/// Builds unique search terms, interleaving terms across content types.
-fn search_terms(content_types: &[ContentType]) -> Vec<String> {
-    let mut terms = Vec::new();
-    let mut seen = HashSet::new();
-
-    if strict {
-        for content_type in content_types {
-            let term = content_type.to_string();
-
-            if seen.insert(term.clone()) {
-                terms.push(term);
-            }
-        }
-
-        return terms;
-    }
-
-    let max_terms = content_types
-        .iter()
-        .map(|content_type| content_type.terms().len())
-        .max()
-        .unwrap_or_default();
-
-    for term_index in 0..max_terms {
-        for content_type in content_types {
-            if let Some(term) = content_type.terms().get(term_index) {
-                let term = (*term).to_owned();
-
-                if seen.insert(term.clone()) {
-                    terms.push(term);
-                }
-            }
-        }
-    }
-
-    terms
-}
-
-/// Checks whether all non-empty filter terms occur in dataset metadata.
-fn matches_filter_terms(dataset: &DatasetSummary, filter_terms: &[String]) -> bool {
-    let metadata = format!("{} {}", dataset.id, dataset.searchable_metadata).to_lowercase();
-
-    filter_terms
-        .iter()
-        .filter(|term| !term.trim().is_empty())
-        .all(|term| metadata.contains(&term.trim().to_lowercase()))
-}
-
-/// Maps a path to its configured artifact format.
-fn artifact_format_for_path(path: &str, formats: &[FileFormat]) -> Option<ArtifactFormat> {
-    let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
-
-    formats.iter().find_map(|format| {
-        match (*format, extension.as_str()) {
-            (FileFormat::Csv, "csv") => Some(ArtifactFormat::Tabular),
-            (FileFormat::Json, "json") => Some(ArtifactFormat::Json),
-            _ => None,
-        }
-    })
 }

@@ -1,6 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use datasets_core::ArtifactFormat;
+use futures::AsyncRead;
 use strum::VariantArray;
 
 use super::error::CrawlerError;
@@ -85,33 +86,45 @@ pub struct SourceArtifact {
 
 /// Operations required to discover and retrieve remote datasets
 pub trait DatasetSource: Send + Sync {
-    /// Searches for datasets matching search term
+    /// Discovers datasets available from the remote source.
     ///
-    /// # Errors
-    /// - Returns error if search fails
-    fn search<'a>(
+    /// Parameters:
+    /// - `query`: Optional source-specific search query. If `None`, discovery
+    ///   is unrestricted by search terms.
+    /// - `limit`: Optional maximum number of datasets to return.
+    ///
+    /// Errors:
+    /// - Returns an error if dataset discovery fails.
+    fn discover_datasets<'a>(
         &'a self,
         query: Option<&'a str>,
-        formats: &'a [FileFormat],
         limit: Option<usize>,
     ) -> impl Future<Output = Result<Vec<DatasetSummary>, CrawlerError>> + Send + 'a;
 
-    /// Lists files available in dataset
+    /// Lists the artifacts available within a dataset.
     ///
-    /// # Errors
-    /// - returns error if repo listing fails
+    /// Parameters:
+    /// - `dataset_id`: Identifier of the dataset whose artifacts should be
+    ///   listed.
+    ///
+    /// Errors:
+    /// - Returns an error if artifact listing fails.
     fn list_artifacts<'a>(
         &'a self,
         dataset_id: &'a str,
     ) -> impl Future<Output = Result<Vec<SourceArtifact>, CrawlerError>> + Send + 'a;
 
-    /// Downloads an artifact and returns content
+    /// Opens a remote artifact for asynchronous reading.
     ///
-    /// # Errors
-    /// - Returns error if artifact cannot be retrieved
-    fn download_artifact<'a>(
+    /// Parameters:
+    /// - `dataset_id`: Identifier of the dataset containing the artifact.
+    /// - `artifact`: Metadata describing the artifact to open.
+    ///
+    /// Errors:
+    /// - Returns an error if the artifact cannot be opened.
+    fn open_artifact<'a>(
         &'a self,
         dataset_id: &'a str,
         artifact: &'a SourceArtifact,
-    ) -> impl Future<Output = Result<Vec<u8>, CrawlerError>> + Send + 'a;
+    ) -> impl Future<Output = Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError>> + Send + 'a;
 }

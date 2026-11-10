@@ -35,7 +35,7 @@ impl DatasetSource for ZenodoSource {
         const PAGE_SIZE: u32 = 20;
         let search_query = match query {
             Some(term) => term,
-            None => "none"
+            None => "none",
         };
         debug!(
             query = %search_query,
