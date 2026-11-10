@@ -1,3 +1,5 @@
+
+
 use std::path::Path;
 
 use tracing::debug;
@@ -26,10 +28,9 @@ impl ZenodoSource {
 }
 
 impl DatasetSource for ZenodoSource {
-    async fn search<'a>(
+    async fn discover_datasets<'a>(
         &'a self,
         query: Option<&'a str>,
-        formats: &'a [FileFormat],
         limit: Option<usize>,
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
         const PAGE_SIZE: u32 = 20;
@@ -39,7 +40,6 @@ impl DatasetSource for ZenodoSource {
         };
         debug!(
             query = %search_query,
-            formats = ?formats,
             limit = ?limit,
             "querying Zenodo record search"
         );

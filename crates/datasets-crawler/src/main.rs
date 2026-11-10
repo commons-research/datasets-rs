@@ -4,7 +4,7 @@
 
 use datasets_core::ContentType;
 use datasets_crawler::{
-    CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, ZenodoSource, crawl,
+    CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, crawl,
 };
 
 /// Command-line configuration.
@@ -115,10 +115,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
             }
         }
         SourceArg::Zenodo => {
-            match ZenodoSource::new() {
-                Ok(source) => crawl(&source, &config, &cancellation).await,
-                Err(error) => Err(error),
-            }
+           return Ok(())
         }
     };
 
