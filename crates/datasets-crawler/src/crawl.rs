@@ -320,7 +320,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 );
                 return None;
             }
-            result = self.source.download_artifact(
+            result = self.source.open_artifact(
                 &dataset.id,
                 artifact
             ) => result,
@@ -471,9 +471,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 );
                 return Ok(None);
             }
-            result = self.source.search(
+            result = self.source.discover_datasets(
                 term,
-                self.config.formats.as_deref(),
                 self.config.max_repositories,
             ) => result?
         };

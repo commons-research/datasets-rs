@@ -4,10 +4,16 @@ use super::{classification::Classification, error::CoreError, labeler::Labeler};
 
 /// Visits structured dataset content and produces classification evidence.
 pub trait Visitor {
-    /// Inspects structured dataset content
+    /// Inspects structured dataset content.
     ///
-    /// # Errors
-    /// - Returns [`CoreError`] if input cannot be inspected
-    fn visit<R: Read, L: Labeler>(reader: R, labeler: &L)
-    -> Result<Vec<Classification>, CoreError>;
+    /// Parameters:
+    /// - `reader`: Input containing the dataset content.
+    /// - `labelers`: Scientific labelers used to evaluate the content.
+    ///
+    /// Errors:
+    /// - Returns an error if input cannot be inspected.
+    fn visit<R: Read>(
+        reader: R,
+        labelers: &[&dyn Labeler],
+    ) -> Result<Vec<Classification>, CoreError>;
 }
