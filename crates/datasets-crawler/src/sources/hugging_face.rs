@@ -1,4 +1,4 @@
-use futures::{StreamExt, TryStreamExt, future};
+use futures::{AsyncRead, StreamExt, TryStreamExt};
 use hf_hub::{
     HFClient,
     progress::{DownloadEvent, ProgressEvent, ProgressHandler},
@@ -9,7 +9,7 @@ use tracing::debug;
 
 use super::super::{
     error::CrawlerError,
-    source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact},
+    source::{DatasetSource, DatasetSummary, SourceArtifact},
 };
 use crate::progress::DownloadProgress;
 
@@ -30,37 +30,18 @@ impl HuggingFaceSource {
 }
 
 impl DatasetSource for HuggingFaceSource {
-    async fn search(
+    async fn discover_datasets(
         &self,
         query: Option<&str>,
-        formats: &[FileFormat],
         limit: Option<usize>,
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
-        let search_query = match query {
-            Some(term) => term,
-            None => "none",
-        };
         debug!(
-            query = %search_query,
-            formats = ?formats,
+            query = ?query,
             limit = ?limit,
-            "querying Hugging Face dataset search"
+            "discovering Hugging Face datasets"
         );
 
-        let stream = self.client.list_datasets().maybe_search(query).full(true).send()?.try_filter(
-            |dataset| {
-                let matches = dataset_matches_formats(dataset, formats);
-
-                if !matches {
-                    debug!(
-                        dataset_id = %dataset.id,
-                        requested_formats = ?formats,
-                        "dataset rejected by Hugging Face format metadata"
-                    );
-                }
-                future::ready(matches)
-            },
-        );
+        let stream = self.client.list_datasets().maybe_search(query).full(true).send()?;
 
         let datasets: Vec<DatasetInfo> = match limit {
             Some(limit) => stream.take(limit).try_collect().await?,
@@ -68,9 +49,9 @@ impl DatasetSource for HuggingFaceSource {
         };
 
         debug!(
-            query = %search_query,
-            matching_datasets = datasets.len(),
-            "finished Hugging Face metadata filtering"
+            query = ?query,
+            discovered_datasets = datasets.len(),
+            "finished Hugging Face dataset discovery"
         );
 
         Ok(datasets.iter().map(dataset_summary).collect())
@@ -102,61 +83,50 @@ impl DatasetSource for HuggingFaceSource {
             .collect())
     }
 
-    async fn download_artifact(
-        &self,
-        dataset_id: &str,
-        artifact: &SourceArtifact,
-    ) -> Result<Vec<u8>, CrawlerError> {
+    async fn open_artifact<'a>(
+        &'a self,
+        dataset_id: &'a str,
+        artifact: &'a SourceArtifact,
+    ) -> Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
-
         debug!(
             dataset_id = %dataset_id,
             artifact_path = %artifact.path,
-            "requesting Hugging Face artifact download"
+            "opening Hugging Face artifact stream"
         );
-
         let progress_message = format!("{dataset_id}/{}", artifact.path);
         let progress = DownloadProgress::new(artifact.size_bytes, progress_message);
 
         let download_result = self
             .client
             .dataset(owner, name)
-            .download_file()
+            .download_file_stream()
             .filename(artifact.path.clone())
             .progress(HuggingFaceProgressHandler::new(progress.clone(), artifact.path.clone()))
             .send()
             .await;
 
-        let cached_path = match download_result {
-            Ok(path) => {
-                progress.finish_with_message(format!("Downloaded {dataset_id}/{}", artifact.path));
-                path
-            }
+        let (_, stream) = match download_result {
+            Ok(result) => result,
             Err(error) => {
-                progress.abandon_with_message(format!(
-                    "Download failed: {dataset_id}/{}",
-                    artifact.path
-                ));
+                progress
+                    .abandon_with_message(format!("Failed to open {dataset_id}/{}", artifact.path));
                 return Err(error.into());
             }
         };
+        let failed_progress = progress.clone();
+        let failed_dataset_id = dataset_id.to_owned();
+        let failed_artifact_path = artifact.path.clone();
+        let reader = stream
+            .map_err(move |error| {
+                failed_progress.abandon_with_message(format!(
+                    "failed reading {failed_dataset_id}/{failed_artifact_path}"
+                ));
+                std::io::Error::other(error)
+            })
+            .into_async_read();
 
-        debug!(
-            dataset_id = %dataset_id,
-            artifact_path = %artifact.path,
-            "download completed; loading cached artifact into memory"
-        );
-
-        let bytes = tokio::fs::read(cached_path).await?;
-
-        debug!(
-            dataset_id = %dataset_id,
-            artifact_path = %artifact.path,
-            downloaded_bytes = bytes.len(),
-            "loaded cached artifact into memory"
-        );
-
-        Ok(bytes)
+        Ok(reader)
     }
 }
 
@@ -184,26 +154,6 @@ fn dataset_summary(dataset: &DatasetInfo) -> DatasetSummary {
         url: format!("https://huggingface.co/datasets/{}", dataset.id),
         searchable_metadata,
     }
-}
-
-/// Checks HF format metadata against required file formats
-fn dataset_matches_formats(dataset: &DatasetInfo, requested_formats: &[FileFormat]) -> bool {
-    if requested_formats.is_empty() {
-        return true;
-    }
-    let Some(tags) = &dataset.tags else {
-        return true;
-    };
-
-    let mut format_tags = tags.iter().filter_map(|tag| tag.strip_prefix("format:"));
-
-    let Some(first_tag) = format_tags.next() else {
-        return true;
-    };
-
-    requested_formats.iter().any(|format| {
-        first_tag == format.as_str() || format_tags.clone().any(|tag| tag == format.as_str())
-    })
 }
 
 /// Adapts HF download events to shared progress display
@@ -245,7 +195,9 @@ impl ProgressHandler for HuggingFaceProgressHandler {
                 self.progress.set_position(*bytes_completed);
             }
 
-            DownloadEvent::Complete => {}
+            DownloadEvent::Complete => {
+                self.progress.finish_with_message(format!("Download {}", self.artifact_path));
+            }
         }
     }
 }
