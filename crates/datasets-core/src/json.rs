@@ -7,42 +7,60 @@ use super::{Classification, CoreError, labeler::Labeler, visitor::Visitor};
 /// Visits JSON dataset content.
 pub struct JsonVisitor;
 
+
 impl Visitor for JsonVisitor {
-    /// Inspects JSON data using the provided scientific labeler.
+    /// Inspects JSON data using the provided scientific labelers.
     ///
-    /// # Errors
-    /// - Returns [`CoreError`] when the JSON input cannot be parsed
-    fn visit<R: Read, L: Labeler>(
+    /// Parameters:
+    /// - `reader`: Input containing JSON data.
+    /// - `labelers`: Scientific labelers used to evaluate string values.
+    ///
+    /// Errors:
+    /// - Returns [`CoreError`] when the JSON input cannot be parsed.
+    fn visit<R: Read>(
         reader: R,
-        labeler: &L,
+        labelers: &[&dyn Labeler],
     ) -> Result<Vec<Classification>, CoreError> {
         let value: Value = serde_json::from_reader(reader)?;
 
-        let mut evidence = BTreeMap::new();
+        let mut evidence: Vec<BTreeMap<String, (usize, usize)>> =
+            (0..labelers.len()).map(|_| BTreeMap::new()).collect();
 
-        visit_value(&value, "$", labeler, &mut evidence);
-        Ok(evidence
-            .into_iter()
-            .map(|(location, (inspected, valid))| {
-                Classification::new(labeler.content_type(), location, inspected, valid)
-            })
-            .collect())
+        visit_value(&value, "$", labelers, &mut evidence);
+
+        let mut classifications = Vec::new();
+
+        for (labeler, locations) in labelers.iter().zip(evidence) {
+            classifications.extend(
+                locations.into_iter().map(|(location, (inspected, valid))| {
+                    Classification::new(
+                        labeler.content_type(),
+                        location,
+                        inspected,
+                        valid,
+                    )
+                }),
+            );
+        }
+
+        Ok(classifications)
     }
 }
 
-/// Recursively visits JSON values and accumulates evidence by location
-fn visit_value<L: Labeler>(
+
+
+/// Recursively visits JSON values and accumulates evidence by location.
+fn visit_value(
     value: &Value,
     location: &str,
-    labeler: &L,
-    evidence: &mut BTreeMap<String, (usize, usize)>,
+    labelers: &[&dyn Labeler],
+    evidence: &mut [BTreeMap<String, (usize, usize)>],
 ) {
     match value {
         Value::Object(object) => {
             for (key, value) in object {
                 let child_location = format!("{location}.{key}");
-
-                visit_value(value, &child_location, labeler, evidence);
+                visit_value(value, &child_location, labelers, evidence);
             }
         }
 
@@ -50,7 +68,7 @@ fn visit_value<L: Labeler>(
             let child_location = format!("{location}[]");
 
             for value in values {
-                visit_value(value, &child_location, labeler, evidence);
+                visit_value(value, &child_location, labelers, evidence);
             }
         }
 
@@ -59,18 +77,22 @@ fn visit_value<L: Labeler>(
                 return;
             }
 
-            let (inspected, valid) = evidence.entry(location.to_owned()).or_default();
+            for (labeler, locations) in labelers.iter().zip(evidence.iter_mut()) {
+                let (inspected, valid) =
+                    locations.entry(location.to_owned()).or_default();
 
-            *inspected += 1;
+                *inspected += 1;
 
-            if labeler.is_valid(value) {
-                *valid += 1;
+                if labeler.is_valid(value) {
+                    *valid += 1;
+                }
             }
         }
 
         _ => {}
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -104,7 +126,9 @@ mod tests {
         }
         "#;
 
-        let classifications = JsonVisitor::visit(json.as_bytes(), &SmilesLabeler)?;
+    let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+    let classifications = JsonVisitor::visit(json.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(Smiles, "$.canonical_smiles[]", 3, 2),
