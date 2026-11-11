@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use csv::ReaderBuilder;
+use csv::{ByteRecord, ReaderBuilder};
 
 use crate::CoreError;
 
@@ -50,28 +50,39 @@ impl TabularDialect {
         self.has_headers
     }
 
-    /// Detects dialect of a delimited text artifact
-    ///
-    /// # Errors
-    /// - Returns [`CoreError`] if records cannot be parsed
-    pub(crate) fn detect(data: &[u8]) -> Result<Self, CoreError> {
-        let mut best: Option<CandidateScore> = None;
+    /// Detects the dialect from a potentially truncated sample.
+///
+/// # Errors
+/// - Returns [`CoreError`] if sampled records cannot be parsed.
+pub(crate) fn detect_sample(
+    data: &[u8],
+    may_be_truncated: bool,
+) -> Result<Self, CoreError> {
+    let mut best: Option<CandidateScore> = None;
 
-        for delimiter in DELIMITERS {
-            let Some(candidate) = CandidateScore::sample(data, delimiter)? else {
-                continue;
-            };
-            if best.is_none_or(|current| candidate.better_than(current)) {
-                best = Some(candidate);
-            }
+    for delimiter in DELIMITERS {
+        let sample = complete_records(data, delimiter, may_be_truncated)?;
+
+        let Some(candidate) = CandidateScore::sample(sample, delimiter)? else {
+            continue;
+        };
+
+        if best.is_none_or(|current| candidate.better_than(current)) {
+            best = Some(candidate);
         }
-
-        let delimiter = best.map_or(b',', |score| score.delimiter);
-
-        let has_headers = best.is_some() && detect_headers(data, delimiter)?;
-
-        Ok(Self { delimiter, has_headers })
     }
+
+    let delimiter = best.map_or(b',', |score| score.delimiter);
+
+    let sample = complete_records(data, delimiter, may_be_truncated)?;
+
+    let has_headers = best.is_some() && detect_headers(sample, delimiter)?;
+
+    Ok(Self {
+        delimiter,
+        has_headers,
+    })
+}
 }
 
 impl CandidateScore {
@@ -181,4 +192,30 @@ fn looks_like_column_name(value: &str) -> bool {
     let name = value.trim().to_ascii_lowercase();
 
     matches!(name.as_str(), "id" | "name" | "label" | "value")
+}
+
+/// Returns complete-record prefix of a potentially truncated sample.
+/// 
+/// # Errors
+/// - Returns [`CoreError`] if sample cannot be parsed.
+fn complete_records(
+    data: &[u8],
+    delimiter: u8,
+    may_be_truncated: bool,
+) -> Result<&[u8], CoreError> {
+    if !may_be_truncated {
+        return Ok(data);
+    }
+    let mut reader = ReaderBuilder::new().delimiter(delimiter).has_headers(false).flexible(true).from_reader(data);
+
+    let mut record = ByteRecord::new();
+    let mut complete_end = 0;
+    while reader.read_byte_record(&mut record)? {
+        let end = usize::try_from(reader.position().byte()).unwrap_or(data.len());
+        if end == data.len() {
+            break;
+        }
+        complete_end = end;
+    }
+    Ok(&data[..complete_end])
 }

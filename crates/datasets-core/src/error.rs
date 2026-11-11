@@ -1,3 +1,4 @@
+
 use thiserror::Error;
 
 /// Errors produced while inspecting dataset contents.
@@ -18,4 +19,8 @@ pub enum CoreError {
         /// Value not able to parse
         value: String,
     },
+
+    /// An I/O error occurred while reading dataset content.
+    #[error("failed to read dataset content: {0}")]
+    Io(#[from] std::io::Error),
 }

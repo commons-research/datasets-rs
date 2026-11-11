@@ -213,7 +213,7 @@ ethanol;CCO;C2H6O
 water;O;H2O
 ";
 
-        let dialect = TabularDialect::detect(data.as_bytes())?;
+        let dialect = TabularDialect::detect_sample(data.as_bytes(), false)?;
 
         assert_eq!(dialect.delimiter(), b';');
 

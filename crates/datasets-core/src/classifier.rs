@@ -1,3 +1,5 @@
+use std::io::{Cursor, Read};
+
 use super::{
     Classification, ContentType, CoreError,
     json::JsonVisitor,
@@ -44,18 +46,20 @@ impl Classifier {
     ///
     /// # Errors
     /// - Returns [`CoreError`] if the artifact cannot be inspected
-    pub fn classify(&self, data: &[u8]) -> Result<Vec<Classification>, CoreError> {
-        classify_artifact(data, self.format, &self.content_types)
+    pub fn classify<R: Read>(&self, reader: R) -> Result<Vec<Classification>, CoreError> {
+        classify_artifact(reader, self.format, &self.content_types)
     }
 }
+
+/// Maximum buffer size used for initial dialect detection.
+const DIALECT_BUFFER_SIZE: u64 = 64 * 1024;
 
 /// Classifies an artifact for the requested scientific content types.
 ///
 /// # Errors
-///
-/// Returns [`CoreError`] if the artifact cannot be inspected.
-pub fn classify_artifact(
-    data: &[u8],
+/// - Returns [`CoreError`] if the artifact cannot be inspected.
+pub fn classify_artifact<R: Read>(
+    mut reader: R,
     format: ArtifactFormat,
     content_types: &[ContentType],
 ) -> Result<Vec<Classification>, CoreError> {
@@ -63,10 +67,18 @@ pub fn classify_artifact(
 
     match format {
         ArtifactFormat::Tabular => {
-            let dialect = TabularDialect::detect(data)?;
-            TabularVisitor::visit_with_dialect(data, &labelers, dialect)
+            let mut sample = Vec::new();
+            reader.by_ref().take(DIALECT_BUFFER_SIZE).read_to_end(&mut sample)?;
+
+        let may_be_truncated =
+            u64::try_from(sample.len()) == Ok(DIALECT_BUFFER_SIZE);
+
+        let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
+            let replay_reader = Cursor::new(sample).chain(reader);
+
+            TabularVisitor::visit_with_dialect(replay_reader, &labelers, dialect)
         }
-        ArtifactFormat::Json => JsonVisitor::visit(data, &labelers),
+        ArtifactFormat::Json => JsonVisitor::visit(reader, &labelers),
     }
 }
 
@@ -204,4 +216,49 @@ broken,C(,garbage
 
         Ok(())
     }
+
+
+#[test]
+fn detects_dialect_with_incomplete_final_record() -> Result<(), CoreError> {
+    let sample = b"name;smiles;formula\n\
+ethanol;CCO;C2H6O\n\
+water;O;H2O\n\
+broken;\"unfinished quoted field\n\
+still inside the quoted field";
+
+    let dialect = TabularDialect::detect_sample(sample, true)?;
+
+    assert_eq!(dialect.delimiter(), b';');
+    assert!(dialect.has_headers());
+
+    Ok(())
+}
+
+#[test]
+fn detects_dialect_with_truncated_utf8() -> Result<(), CoreError> {
+    let sample = b"name;smiles;formula\n\
+ethanol;CCO;C2H6O\n\
+water;O;H2O\n\
+broken;\xC3";
+
+    let dialect = TabularDialect::detect_sample(sample, true)?;
+
+    assert_eq!(dialect.delimiter(), b';');
+    assert!(dialect.has_headers());
+
+    Ok(())
+}
+
+#[test]
+fn detects_complete_sample_without_trailing_newline() -> Result<(), CoreError> {
+    let sample = b"name;smiles\nethanol;CCO\nwater;O";
+
+    let dialect = TabularDialect::detect_sample(sample, false)?;
+
+    assert_eq!(dialect.delimiter(), b';');
+    assert!(dialect.has_headers());
+
+    Ok(())
+}
+
 }
