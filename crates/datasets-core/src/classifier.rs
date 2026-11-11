@@ -2,7 +2,6 @@ use super::{
     Classification, ContentType, CoreError,
     json::JsonVisitor,
     labeler::Labeler,
-    labels::{MolecularFormulaLabeler, SmilesLabeler},
     tabular::{TabularDialect, TabularVisitor},
     visitor::Visitor,
 };
@@ -60,47 +59,14 @@ pub fn classify_artifact(
     format: ArtifactFormat,
     content_types: &[ContentType],
 ) -> Result<Vec<Classification>, CoreError> {
-    let dialect = match format {
-        ArtifactFormat::Tabular => Some(TabularDialect::detect(data)?),
-        ArtifactFormat::Json => None,
-    };
+    let labelers: Vec<&dyn Labeler> = content_types.iter().map(ContentType::labeler).collect();
 
-    let mut classifications = Vec::new();
-
-    for content_type in content_types {
-        let results = match content_type {
-            ContentType::Smiles => {
-                classify_with_labeler(data, format, dialect.as_ref(), &SmilesLabeler)?
-            }
-            ContentType::MolecularFormula => {
-                classify_with_labeler(data, format, dialect.as_ref(), &MolecularFormulaLabeler)?
-            }
-        };
-
-        classifications.extend(results);
-    }
-
-    Ok(classifications)
-}
-
-/// Classifies an artifact using a single scientific labeler.
-///
-/// # Errors
-/// - Returns [`CoreError`] if the artifact cannot be inspected.
-fn classify_with_labeler<L: Labeler>(
-    data: &[u8],
-    format: ArtifactFormat,
-    dialect: Option<&TabularDialect>,
-    labeler: &L,
-) -> Result<Vec<Classification>, CoreError> {
     match format {
         ArtifactFormat::Tabular => {
-            dialect.map_or_else(
-                || TabularVisitor::visit(data, labeler),
-                |dialect| TabularVisitor::visit_with_dialect(data, labeler, *dialect),
-            )
+            let dialect = TabularDialect::detect(data)?;
+            TabularVisitor::visit_with_dialect(data, &labelers, dialect)
         }
-        ArtifactFormat::Json => JsonVisitor::visit(data, labeler),
+        ArtifactFormat::Json => JsonVisitor::visit(data, &labelers),
     }
 }
 

@@ -3,9 +3,7 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use datasets_core::ContentType;
-use datasets_crawler::{
-    CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, crawl,
-};
+use datasets_crawler::{CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, crawl};
 
 /// Command-line configuration.
 mod cli;
@@ -114,9 +112,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
                 Err(error) => Err(error),
             }
         }
-        SourceArg::Zenodo => {
-           return Ok(())
-        }
+        SourceArg::Zenodo => return Ok(()),
     };
 
     // The crawl has finished; stop listening for signals.

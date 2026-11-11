@@ -3,6 +3,10 @@ use std::{fmt, str::FromStr};
 use strum::VariantArray;
 
 use super::CoreError;
+use crate::{
+    labeler::Labeler,
+    labels::{MolecularFormulaLabeler, SmilesLabeler},
+};
 
 /// Scientific content type that may be detected within a dataset.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, VariantArray)]
@@ -50,6 +54,14 @@ impl ContentType {
     #[must_use]
     pub fn all_types() -> Vec<Self> {
         Self::VARIANTS.to_vec()
+    }
+    /// Returns the [`Labeler`] associated with the content type.
+    #[must_use]
+    pub fn labeler(&self) -> &'static dyn Labeler {
+        match self {
+            Self::MolecularFormula => &MolecularFormulaLabeler,
+            Self::Smiles => &SmilesLabeler,
+        }
     }
 }
 

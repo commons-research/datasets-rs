@@ -31,9 +31,7 @@ impl TabularVisitor {
             (0..column_count).map(|index| format!("column_{index}")).collect()
         };
 
-        let mut stats = vec![vec![
-            ColumnStats::default(); column_names.len()
-        ]; labelers.len()];
+        let mut stats = vec![vec![ColumnStats::default(); column_names.len()]; labelers.len()];
         for record in csv_reader.records() {
             let record = record?;
             for (column_index, value) in record.iter().enumerate() {
@@ -49,13 +47,18 @@ impl TabularVisitor {
                 }
             }
         }
-        
+
         let mut classifications = Vec::with_capacity(labelers.len() * column_names.len());
         for (labeler_index, labeler) in labelers.iter().enumerate() {
             for (column_index, name) in column_names.iter().enumerate() {
                 let column_stats = &stats[labeler_index][column_index];
 
-                classifications.push(Classification::new(labeler.content_type(), name.clone(), column_stats.inspected, column_stats.valid));
+                classifications.push(Classification::new(
+                    labeler.content_type(),
+                    name.clone(),
+                    column_stats.inspected,
+                    column_stats.valid,
+                ));
             }
         }
         Ok(classifications)
@@ -83,7 +86,6 @@ struct ColumnStats {
     /// Number of values accepted by the labeler.
     valid: usize,
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -130,8 +132,7 @@ broken,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let classifications =
-            <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
+        let classifications = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(Smiles, "name", 3, 0),
@@ -155,8 +156,7 @@ sample_three,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&MolecularFormulaLabeler];
 
-        let classifications =
-            <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
+        let classifications = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(MolecularFormula, "label", 3, 0),
@@ -177,11 +177,8 @@ alpha,
 beta,gamma
 ";
 
-        let smiles_labeler = CountingLabeler {
-            content_type: Smiles,
-            accepted_value: "alpha",
-            calls: Cell::new(0),
-        };
+        let smiles_labeler =
+            CountingLabeler { content_type: Smiles, accepted_value: "alpha", calls: Cell::new(0) };
 
         let formula_labeler = CountingLabeler {
             content_type: MolecularFormula,
@@ -189,13 +186,9 @@ beta,gamma
             calls: Cell::new(0),
         };
 
-        let labelers: [&dyn Labeler; 2] = [
-            &smiles_labeler,
-            &formula_labeler,
-        ];
+        let labelers: [&dyn Labeler; 2] = [&smiles_labeler, &formula_labeler];
 
-        let classifications =
-            <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
+        let classifications = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(Smiles, "first", 2, 1),
@@ -224,34 +217,32 @@ water;O;H2O
 
         assert_eq!(dialect.delimiter(), b';');
 
-        let labelers: [&dyn Labeler; 2] = [
-            &SmilesLabeler,
-            &MolecularFormulaLabeler,
-        ];
+        let labelers: [&dyn Labeler; 2] = [&SmilesLabeler, &MolecularFormulaLabeler];
 
-        let classifications = TabularVisitor::visit_with_dialect(
-            data.as_bytes(),
-            &labelers,
-            dialect,
-        )?;
+        let classifications =
+            TabularVisitor::visit_with_dialect(data.as_bytes(), &labelers, dialect)?;
 
         assert_eq!(classifications.len(), 6);
 
-        let smiles = classifications.iter().find(|classification| {
-            classification.content_type() == Smiles
-                && classification.location() == "smiles"
-        }).expect("SMILES classification should exist");
+        assert!(
+            classifications.iter().any(|classification| {
+                classification.content_type() == Smiles
+                    && classification.location() == "smiles"
+                    && classification.inspected() == 2
+                    && classification.valid() == 2
+            }),
+            "SMILES classification should contain the expected evidence"
+        );
 
-        assert_eq!(smiles.inspected(), 2);
-        assert_eq!(smiles.valid(), 2);
-
-        let formula = classifications.iter().find(|classification| {
-            classification.content_type() == MolecularFormula
-                && classification.location() == "formula"
-        }).expect("formula classification should exist");
-
-        assert_eq!(formula.inspected(), 2);
-        assert_eq!(formula.valid(), 2);
+        assert!(
+            classifications.iter().any(|classification| {
+                classification.content_type() == MolecularFormula
+                    && classification.location() == "formula"
+                    && classification.inspected() == 2
+                    && classification.valid() == 2
+            }),
+            "molecular formula classification should contain the expected evidence"
+        );
 
         Ok(())
     }

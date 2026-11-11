@@ -6,11 +6,11 @@ use super::{classification::Classification, error::CoreError, labeler::Labeler};
 pub trait Visitor {
     /// Inspects structured dataset content.
     ///
-    /// Parameters:
+    /// # Parameters
     /// - `reader`: Input containing the dataset content.
     /// - `labelers`: Scientific labelers used to evaluate the content.
     ///
-    /// Errors:
+    /// # Errors
     /// - Returns an error if input cannot be inspected.
     fn visit<R: Read>(
         reader: R,
