@@ -54,7 +54,7 @@ impl Inspection {
 #[derive(Debug)]
 pub struct Visit {
     /// Evidence collected per content type and location.
-    pub classification: Vec<Classification>,
+    pub classifications: Vec<Classification>,
     /// Number of records that were inspected.
     pub records: usize,
     /// Reason the visitor stopped.

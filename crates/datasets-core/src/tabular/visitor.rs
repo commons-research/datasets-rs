@@ -1,11 +1,19 @@
-use std::io::Read;
+use std::io::{Cursor, Read};
 
-use csv::ReaderBuilder;
+use csv::{ByteRecord, ReaderBuilder};
+
 
 use super::{
-    super::{Classification, CoreError, labeler::Labeler, visitor::Visitor},
-    TabularDialect,
+    super::{
+        Classification, CoreError,
+        inspection::{InspectionLimits, StopReason, Visit},
+        labeler::Labeler,
+        visitor::Visitor,
+    }, TabularDialect,
 };
+
+/// Number of bytes buffered from start for dialect detection.
+const DIALECT_SAMPLE_BYTES: u64 = 64 * 1024;
 
 /// Visits tabular dataset content
 pub struct TabularVisitor;
@@ -18,24 +26,49 @@ impl TabularVisitor {
     pub(crate) fn visit_with_dialect<R: Read>(
         reader: R,
         labelers: &[&dyn Labeler],
+        limits: InspectionLimits,
         dialect: TabularDialect,
-    ) -> Result<Vec<Classification>, CoreError> {
+    ) -> Result<Visit, CoreError> {
         let mut csv_reader = ReaderBuilder::new()
             .delimiter(dialect.delimiter())
             .has_headers(dialect.has_headers())
+            .flexible(true)
             .from_reader(reader);
+
         let column_names: Vec<String> = if dialect.has_headers() {
-            csv_reader.headers()?.iter().map(str::to_owned).collect()
+            csv_reader.byte_headers()?.iter().map(|name| String::from_utf8_lossy(name).trim().to_owned()).collect()
         } else {
-            let column_count = csv_reader.headers()?.len();
+            let column_count = csv_reader.byte_headers()?.len();
             (0..column_count).map(|index| format!("column_{index}")).collect()
         };
 
         let mut stats = vec![vec![ColumnStats::default(); column_names.len()]; labelers.len()];
-        for record in csv_reader.records() {
-            let record = record?;
-            for (column_index, value) in record.iter().enumerate() {
-                if value.trim().is_empty() {
+        let mut record = ByteRecord::new();
+        let mut records = 0usize;
+        let mut stop = StopReason::EndOfInput;
+
+        loop {
+            if limits.max_records.is_some_and(|max_records| records >= max_records) {
+                stop = StopReason::RecordLimit;
+                break;
+            }
+            match csv_reader.read_byte_record(&mut record) {
+                Ok(true) => {},
+                Ok(false) => break,
+                Err(error) if records > 0 => {
+                    stop = StopReason::Error(error.to_string());
+                    break;
+                }
+                Err(error) => return Err(error.into())
+            }
+            records += 1;
+
+            for (column_index, cell) in record.iter().enumerate().take(column_names.len()) {
+                let Ok(value) = std::str::from_utf8(cell) else {
+                    continue;
+                };
+                let value = value.trim();
+                if value.is_empty() {
                     continue;
                 }
                 for (labeler_index, labeler) in labelers.iter().enumerate() {
@@ -61,20 +94,28 @@ impl TabularVisitor {
                 ));
             }
         }
-        Ok(classifications)
+
+        Ok(Visit { classifications, records, stop})
     }
 }
 
 impl Visitor for TabularVisitor {
-    /// Inspects tabular data using the provided scientific labelers.
+    /// Detects dialect, then inspects tabular data by column with the
+    /// provided scientific labelers.
     ///
     /// # Errors
     /// - Returns [`CoreError`] when the tabular input cannot be parsed.
     fn visit<R: Read>(
-        reader: R,
+        mut reader: R,
         labelers: &[&dyn Labeler],
-    ) -> Result<Vec<Classification>, CoreError> {
-        Self::visit_with_dialect(reader, labelers, TabularDialect::csv())
+        limits: InspectionLimits,
+    ) -> Result<Visit, CoreError> {
+        let mut sample = Vec::new();
+        reader.by_ref().take(DIALECT_SAMPLE_BYTES).read_to_end(&mut sample)?;
+        let may_be_truncated= u64::try_from(sample.len()) == Ok(DIALECT_SAMPLE_BYTES);
+        let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
+
+        Self::visit_with_dialect(Cursor::new(sample).chain(reader), labelers, limits, dialect)
     }
 }
 
@@ -132,7 +173,7 @@ broken,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let classifications = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
+        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers, InspectionLimits::default())?;
 
         let expected = vec![
             Classification::new(Smiles, "name", 3, 0),
@@ -140,7 +181,7 @@ broken,garbage,C(
             Classification::new(Smiles, "canonical_smiles", 3, 2),
         ];
 
-        assert_eq!(classifications, expected);
+        assert_eq!(visit.classifications, expected);
 
         Ok(())
     }
@@ -156,7 +197,7 @@ sample_three,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&MolecularFormulaLabeler];
 
-        let classifications = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
+        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers, InspectionLimits::default())?;
 
         let expected = vec![
             Classification::new(MolecularFormula, "label", 3, 0),
@@ -164,7 +205,7 @@ sample_three,garbage,C(
             Classification::new(MolecularFormula, "alternate_formula", 3, 2),
         ];
 
-        assert_eq!(classifications, expected);
+        assert_eq!(visit.classifications, expected);
 
         Ok(())
     }
@@ -188,7 +229,7 @@ beta,gamma
 
         let labelers: [&dyn Labeler; 2] = [&smiles_labeler, &formula_labeler];
 
-        let classifications = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
+        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers, InspectionLimits::default())?;
 
         let expected = vec![
             Classification::new(Smiles, "first", 2, 1),
@@ -197,7 +238,7 @@ beta,gamma
             Classification::new(MolecularFormula, "second", 1, 1),
         ];
 
-        assert_eq!(classifications, expected);
+        assert_eq!(visit.classifications, expected);
 
         assert_eq!(smiles_labeler.calls.get(), 3);
         assert_eq!(formula_labeler.calls.get(), 3);
@@ -219,13 +260,13 @@ water;O;H2O
 
         let labelers: [&dyn Labeler; 2] = [&SmilesLabeler, &MolecularFormulaLabeler];
 
-        let classifications =
-            TabularVisitor::visit_with_dialect(data.as_bytes(), &labelers, dialect)?;
+        let visit =
+            TabularVisitor::visit_with_dialect(data.as_bytes(), &labelers,  InspectionLimits::default(), dialect)?;
 
-        assert_eq!(classifications.len(), 6);
+        assert_eq!(visit.classifications.len(), 6);
 
         assert!(
-            classifications.iter().any(|classification| {
+            visit.classifications.iter().any(|classification| {
                 classification.content_type() == Smiles
                     && classification.location() == "smiles"
                     && classification.inspected() == 2
@@ -235,7 +276,7 @@ water;O;H2O
         );
 
         assert!(
-            classifications.iter().any(|classification| {
+            visit.classifications.iter().any(|classification| {
                 classification.content_type() == MolecularFormula
                     && classification.location() == "formula"
                     && classification.inspected() == 2
@@ -246,4 +287,40 @@ water;O;H2O
 
         Ok(())
     }
+
+
+#[test]
+fn stops_inspection_at_record_limit() -> Result<(), CoreError> {
+    let csv = "\
+name,smiles
+ethanol,CCO
+water,O
+broken,C(
+";
+
+    let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+    let limits = InspectionLimits {
+        max_records: Some(2),
+        ..InspectionLimits::default()
+    };
+
+    let visit = TabularVisitor::visit(
+        csv.as_bytes(),
+        &labelers,
+        limits,
+    )?;
+
+    let expected = vec![
+        Classification::new(Smiles, "name", 2, 0),
+        Classification::new(Smiles, "smiles", 2, 2),
+    ];
+
+    assert_eq!(visit.classifications, expected);
+    assert_eq!(visit.records, 2);
+    assert!(matches!(visit.stop, StopReason::RecordLimit));
+
+    Ok(())
+}
+
 }

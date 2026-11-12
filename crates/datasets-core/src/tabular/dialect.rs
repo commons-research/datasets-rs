@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use csv::{ByteRecord, ReaderBuilder};
 
@@ -130,7 +130,7 @@ impl CandidateScore {
     }
 }
 
-/// Estimated guess whether first record contains column names
+/// Estimated guess whether first record contains column names. 
 ///
 /// # Errors
 /// - Returns [`CoreError`] if sampled records cannot be parsed
@@ -141,44 +141,28 @@ fn detect_headers(data: &[u8], delimiter: u8) -> Result<bool, CoreError> {
         .flexible(true)
         .from_reader(data);
 
-    let rows = reader.records().take(SAMPLE_RECORDS).collect::<Result<Vec<_>, _>>()?;
+    let mut records = reader.byte_records();
 
-    let Some((first, remaining)) = rows.split_first() else {
+    let Some(first) = records.next().transpose()? else {
         return Ok(false);
     };
 
-    if remaining.is_empty() {
+    if records.next().transpose()?.is_none() {
         return Ok(false);
     }
+    
+    let mut seen = BTreeSet::new();
 
-    if first.iter().any(looks_like_column_name) {
-        return Ok(true);
-    }
-
-    for (index, value) in first.iter().enumerate() {
-        if value.trim().parse::<f64>().is_ok() {
-            continue;
-        }
-        let values = remaining
-            .iter()
-            .filter_map(|row| row.get(index))
-            .filter(|value| !value.trim().is_empty());
-
-        let mut total = 0usize;
-        let mut numeric = 0usize;
-
-        for value in values {
-            total += 1;
-            if value.trim().parse::<f64>().is_ok() {
-                numeric += 1;
-            }
-        }
-
-        if total >= 2 && numeric * 4 >= total * 3 {
-            return Ok(true);
+    for cell in &first {
+        let Ok(cell) = std::str::from_utf8(cell) else {
+            return Ok(false);
+        };
+        let cell = cell.trim();
+        if cell.is_empty() || cell.parse::<f64>().is_ok() || !seen.insert(cell.to_ascii_lowercase()) {
+            return Ok(false)
         }
     }
-    Ok(false)
+    Ok(true)
 }
 
 /// Recognizes common tabular column labels
