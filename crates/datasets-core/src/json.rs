@@ -1,8 +1,11 @@
-use std::{collections::BTreeMap, io::Read};
+use std::{collections::BTreeMap, fmt, io::Read};
 
-use serde_json::Value;
+use serde::de::{DeserializeSeed, Deserializer, Error as _, MapAccess, SeqAccess};
 
-use super::{Classification, CoreError, labeler::Labeler, visitor::Visitor};
+use super::{Classification, CoreError, inspection::{InspectionLimits, StopReason, Visit},labeler::Labeler, visitor::Visitor};
+
+/// Maximum number of distinct locations tracked in one artifact.
+const MAX_LOCATIONS: usize = 10_000;
 
 /// Visits JSON dataset content.
 pub struct JsonVisitor;
@@ -19,28 +22,51 @@ impl Visitor for JsonVisitor {
     fn visit<R: Read>(
         reader: R,
         labelers: &[&dyn Labeler],
-    ) -> Result<Vec<Classification>, CoreError> {
-        let value: Value = serde_json::from_reader(reader)?;
+        limits: InspectionLimits,
+    ) -> Result<Visit, CoreError> {
+        let mut state = WalkState {
+            labelers,
+            evidence: BTreeMap::new(),
+            path: String::from("$"),
+            records: 0,
+            max_records: limits.max_records,
+            record_limit_hit: false,
+        };
 
-        let mut evidence: Vec<BTreeMap<String, EvidenceStats>> =
-            (0..labelers.len()).map(|_| BTreeMap::new()).collect();
+        let mut deserializer = serde_json::Deserializer::from_reader(reader);
+        let mut stop = StopReason::EndOfInput;
 
-        visit_value(&value, "$", labelers, &mut evidence);
+        while deserializer.end().is_err() {
+            if state.record_limit_reached() {
+                stop = StopReason::RecordLimit;
+                break;
+            }
 
-        let mut classifications = Vec::new();
+            let records_before = state.records;
+            let walker = Walker {state: &mut state, depth: 0};
 
-        for (labeler, locations) in labelers.iter().zip(evidence) {
-            classifications.extend(locations.into_iter().map(|(location, stats)| {
-                Classification::new(labeler.content_type(), location, stats.inspected, stats.valid)
-            }));
+            if let Err(error) = walker.deserialize(&mut deserializer) {
+                if state.record_limit_hit {
+                    stop = StopReason::RecordLimit;
+                } else if state.evidence.is_empty() {
+                    return Err(error.into());
+                } else {
+                    stop = StopReason::Error(error.to_string());
+                }
+                break;
+            }
+
+            if state.records == records_before {
+                state.records += 1;
+            }
+            state.path.truncate(1);
         }
-
-        Ok(classifications)
+        Ok(Visit { classifications: state.classifications(), records: state.records, stop })
     }
 }
 
 /// Classification evidence collected for a JSON location.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 struct EvidenceStats {
     /// Number of non-empty values inspected.
     inspected: usize,
@@ -48,46 +74,160 @@ struct EvidenceStats {
     valid: usize,
 }
 
-/// Recursively visits JSON values and accumulates evidence by location.
-fn visit_value(
-    value: &Value,
-    location: &str,
-    labelers: &[&dyn Labeler],
-    evidence: &mut [BTreeMap<String, EvidenceStats>],
-) {
-    match value {
-        Value::Object(object) => {
-            for (key, value) in object {
-                let child_location = format!("{location}.{key}");
-                visit_value(value, &child_location, labelers, evidence);
-            }
+/// Mutable state shared by every step of the walk.
+struct WalkState<'l> {
+    /// Labelers applied to every string value.
+    labelers: &'l [&'l dyn Labeler],
+    /// Evidence per location of the value being visited.
+    evidence: BTreeMap<String, Vec<EvidenceStats>>,
+    /// Normalized location of value being visited.
+    path: String,
+    /// Records completed so far.
+    records: usize,
+    /// Maximum number of records to inspect.
+    max_records: Option<usize>,
+    /// Whether walk aborted by hitting record limit.
+    record_limit_hit: bool,
+}
+
+impl WalkState<'_> {
+    /// Returns whether teh configured record limit has been reached.
+    fn record_limit_reached(&self) -> bool {
+        self.max_records.is_some_and(|max_records| self.records >= max_records)
+    }
+    /// Evaluates one string value at the current location.
+    fn observe(&mut self, value: &str) {
+        let value = value.trim();
+        if value.is_empty() {
+            return;
         }
-
-        Value::Array(values) => {
-            let child_location = format!("{location}[]");
-
-            for value in values {
-                visit_value(value, &child_location, labelers, evidence);
-            }
-        }
-
-        Value::String(value) => {
-            if value.trim().is_empty() {
+        if !self.evidence.contains_key(self.path.as_str()) {
+            if self.evidence.len() >= MAX_LOCATIONS {
                 return;
             }
+            self.evidence.insert(self.path.clone(), vec![EvidenceStats::default(); self.labelers.len()]);
+        }
 
-            for (labeler, locations) in labelers.iter().zip(evidence.iter_mut()) {
-                let stats = locations.entry(location.to_owned()).or_default();
-                stats.inspected += 1;
-                if labeler.is_valid(value) {
-                    stats.valid += 1;
+        let Some(stats) = self.evidence.get_mut(self.path.as_str()) else {
+            return;
+        };
+
+        for (labeler, stats) in self.labelers.iter().zip(stats) {
+            stats.inspected += 1;
+            if labeler.is_valid(value) {
+                stats.valid += 1;
+            }
+        }
+    }
+    /// Converts the collected evidence into classifications.
+    fn classifications(&self) -> Vec<Classification> {
+        let mut classifications = Vec::with_capacity(self.labelers.len() * self.evidence.len());
+
+        for (labeler_index, labeler) in self.labelers.iter().enumerate() {
+            for (location, stats) in &self.evidence {
+                if let Some(stats) = stats.get(labeler_index) {
+                    classifications.push(Classification::new(
+                        labeler.content_type(),
+                        location.clone(),
+                        stats.inspected,
+                        stats.valid,
+                    ));
                 }
             }
         }
-
-        _ => {}
+        classifications
     }
 }
+
+
+/// Walks one JSON value as it is parsed, without building it in memory.
+struct Walker<'s, 'l> {
+    /// State shared across the walk.
+    state: &'s mut WalkState<'l>,
+    /// Nesting depth of the value being visited; the top-level value is 0.
+    depth: usize,
+}
+
+impl<'de> DeserializeSeed<'de> for Walker<'_, '_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for Walker<'_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("any JSON value")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<(), E> {
+        self.state.observe(value);
+        Ok(())
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        let parent_len = self.state.path.len();
+        self.state.path.push_str("[]");
+
+        loop {
+            if self.depth == 0 && self.state.record_limit_reached() {
+                self.state.record_limit_hit = true;
+                return Err(A::Error::custom("record limit reached"));
+            }
+
+            let element = Walker { state: &mut *self.state, depth: self.depth + 1 };
+            if seq.next_element_seed(element)?.is_none() {
+                break;
+            }
+
+            if self.depth == 0 {
+                self.state.records += 1;
+            }
+        }
+
+        self.state.path.truncate(parent_len);
+        Ok(())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let parent_len = self.state.path.len();
+
+        while let Some(key) = map.next_key::<String>()? {
+            self.state.path.push('.');
+            self.state.path.push_str(&key);
+
+            map.next_value_seed(Walker { state: &mut *self.state, depth: self.depth + 1 })?;
+
+            self.state.path.truncate(parent_len);
+        }
+        Ok(())
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
