@@ -23,6 +23,8 @@ tokio = { version = "1.54.0", features = ["fs", "macros", "rt-multi-thread", "si
 zenodo-rs = { version = "0.3.0", features = ["indicatif"] }
 tokio-util = { version = "0.7.20", features = ["rt", "compat", "io-util"] }
 tempfile = "3.27.0"
+serde = "1.0.229"
+serde_json = "1.0.154"
 
 [workspace.lints.rust]
 missing_docs = "deny"

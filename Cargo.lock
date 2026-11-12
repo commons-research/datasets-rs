@@ -587,6 +587,7 @@ version = "0.1.0"
 dependencies = [
  "csv",
  "molecular-formulas 0.3.0",
+ "serde",
  "serde_json",
  "smiles-rs",
  "strum",

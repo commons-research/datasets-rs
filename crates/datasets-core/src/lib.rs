@@ -18,8 +18,11 @@ mod labels;
 mod tabular;
 /// Defines visitor functionality
 mod visitor;
+/// Inspects artifacts while visiting
+mod inspection;
 
 pub use classification::Classification;
 pub use classifier::{ArtifactFormat, Classifier, classify_artifact};
 pub use content::ContentType;
 pub use error::CoreError;
+pub use inspection::{Inspection, InspectionLimits, StopReason};
