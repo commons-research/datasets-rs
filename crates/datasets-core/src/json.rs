@@ -229,9 +229,11 @@ impl<'de> serde::de::Visitor<'de> for Walker<'_, '_> {
 
 
 
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
     use super::*;
     use crate::{
         ContentType::{MolecularFormula, Smiles},
@@ -266,7 +268,11 @@ mod tests {
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let classifications = JsonVisitor::visit(json.as_bytes(), &labelers)?;
+        let visit = JsonVisitor::visit(
+            json.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+        )?;
 
         let expected = vec![
             Classification::new(Smiles, "$.canonical_smiles[]", 3, 2),
@@ -274,10 +280,9 @@ mod tests {
             Classification::new(Smiles, "$.compounds[].smiles", 3, 2),
         ];
 
-        assert_eq!(
-            classifications, expected,
-            "JSON visitor should accumulate evidence by normalized JSON location"
-        );
+        assert_eq!(visit.classifications, expected);
+        assert_eq!(visit.records, 1);
+        assert!(matches!(visit.stop, StopReason::EndOfInput));
 
         Ok(())
     }
@@ -285,20 +290,27 @@ mod tests {
     #[test]
     fn visits_json_with_multiple_labelers() -> Result<(), CoreError> {
         let json = r#"
-    {
-        "records": [
-            {"smiles": "CCO", "formula": "C2H6O"},
-            {"smiles": "C(", "formula": "garbage"}
-        ]
-    }
-    "#;
+        {
+            "records": [
+                {"smiles": "CCO", "formula": "C2H6O"},
+                {"smiles": "C(", "formula": "garbage"}
+            ]
+        }
+        "#;
 
-        let labelers: [&dyn Labeler; 2] = [&SmilesLabeler, &MolecularFormulaLabeler];
+        let labelers: [&dyn Labeler; 2] = [
+            &SmilesLabeler,
+            &MolecularFormulaLabeler,
+        ];
 
-        let classifications = JsonVisitor::visit(json.as_bytes(), &labelers)?;
+        let visit = JsonVisitor::visit(
+            json.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+        )?;
 
         assert!(
-            classifications.iter().any(|classification| {
+            visit.classifications.iter().any(|classification| {
                 classification.content_type() == Smiles
                     && classification.location() == "$.records[].smiles"
                     && classification.inspected() == 2
@@ -308,7 +320,7 @@ mod tests {
         );
 
         assert!(
-            classifications.iter().any(|classification| {
+            visit.classifications.iter().any(|classification| {
                 classification.content_type() == MolecularFormula
                     && classification.location() == "$.records[].formula"
                     && classification.inspected() == 2
@@ -317,7 +329,71 @@ mod tests {
             "formula labeler should identify the valid molecular formula"
         );
 
-        assert_eq!(classifications.len(), 4);
+        assert_eq!(visit.classifications.len(), 4);
+        assert_eq!(visit.records, 1);
+        assert!(matches!(visit.stop, StopReason::EndOfInput));
+
+        Ok(())
+    }
+
+    #[test]
+    fn stops_at_record_limit() -> Result<(), CoreError> {
+        let json = r#"
+        [
+            {"smiles": "CCO"},
+            {"smiles": "O"},
+            {"smiles": "C("}
+        ]
+        "#;
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        let limits = InspectionLimits {
+            max_records: Some(2),
+            ..InspectionLimits::default()
+        };
+
+        let visit = JsonVisitor::visit(
+            json.as_bytes(),
+            &labelers,
+            limits,
+        )?;
+
+        let expected = vec![
+            Classification::new(Smiles, "$[].smiles", 2, 2),
+        ];
+
+        assert_eq!(visit.classifications, expected);
+        assert_eq!(visit.records, 2);
+        assert!(matches!(visit.stop, StopReason::RecordLimit));
+
+        Ok(())
+    }
+
+    #[test]
+    fn returns_partial_evidence_on_parse_error() -> Result<(), CoreError> {
+        let json = r#"
+        [
+            {"smiles": "CCO"},
+            {"smiles": }
+        ]
+        "#;
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        let visit = JsonVisitor::visit(
+            json.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+        )?;
+
+        let expected = vec![
+            Classification::new(Smiles, "$[].smiles", 1, 1),
+        ];
+
+        assert_eq!(visit.classifications, expected);
+        assert_eq!(visit.records, 1);
+        assert!(matches!(visit.stop, StopReason::Error(_)));
 
         Ok(())
     }

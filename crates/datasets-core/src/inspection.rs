@@ -33,7 +33,7 @@ pub enum StopReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inspection {
     /// Evidence collected per content type and location.
-    pub classification: Vec<Classification>,
+    pub classifications: Vec<Classification>,
     /// Number of records inspected.
     pub records: usize,
     /// Number of bytes read from the artifact.

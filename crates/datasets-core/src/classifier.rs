@@ -1,10 +1,11 @@
-use std::io::{Cursor, Read};
+use std::io::Read;
 
 use super::{
+    inspection::{BudgetReader, InspectionLimits,Inspection, StopReason},
     Classification, ContentType, CoreError,
     json::JsonVisitor,
     labeler::Labeler,
-    tabular::{TabularDialect, TabularVisitor},
+    tabular::{TabularVisitor},
     visitor::Visitor,
 };
 
@@ -59,26 +60,32 @@ const DIALECT_BUFFER_SIZE: u64 = 64 * 1024;
 /// # Errors
 /// - Returns [`CoreError`] if the artifact cannot be inspected.
 pub fn classify_artifact<R: Read>(
-    mut reader: R,
+    reader: R,
     format: ArtifactFormat,
     content_types: &[ContentType],
-) -> Result<Vec<Classification>, CoreError> {
+    limits: InspectionLimits,
+) -> Result<Inspection, CoreError> {
     let labelers: Vec<&dyn Labeler> = content_types.iter().map(ContentType::labeler).collect();
 
-    match format {
-        ArtifactFormat::Tabular => {
-            let mut sample = Vec::new();
-            reader.by_ref().take(DIALECT_BUFFER_SIZE).read_to_end(&mut sample)?;
+    let mut reader = BudgetReader::new(reader, limits.max_bytes);
 
-            let may_be_truncated = u64::try_from(sample.len()) == Ok(DIALECT_BUFFER_SIZE);
+    let visit = match format {
+        ArtifactFormat::Tabular => TabularVisitor::visit(&mut reader, &labelers, limits)?,
+        ArtifactFormat::Json => JsonVisitor::visit(&mut reader, &labelers, limits)?,
+    };
 
-            let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
-            let replay_reader = Cursor::new(sample).chain(reader);
+    let stop = if reader.limit_hit() && visit.stop != StopReason::RecordLimit {
+        StopReason::ByteLimit
+    } else {
+        visit.stop
+    };
 
-            TabularVisitor::visit_with_dialect(replay_reader, &labelers, dialect)
-        }
-        ArtifactFormat::Json => JsonVisitor::visit(reader, &labelers),
-    }
+    Ok(Inspection {
+        classifications: visit.classifications,
+        records: visit.records,
+        bytes: reader.bytes_read(),
+        stop,
+    })
 }
 
 #[cfg(test)]
