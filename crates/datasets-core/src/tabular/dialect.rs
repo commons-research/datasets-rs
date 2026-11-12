@@ -51,38 +51,32 @@ impl TabularDialect {
     }
 
     /// Detects the dialect from a potentially truncated sample.
-///
-/// # Errors
-/// - Returns [`CoreError`] if sampled records cannot be parsed.
-pub(crate) fn detect_sample(
-    data: &[u8],
-    may_be_truncated: bool,
-) -> Result<Self, CoreError> {
-    let mut best: Option<CandidateScore> = None;
+    ///
+    /// # Errors
+    /// - Returns [`CoreError`] if sampled records cannot be parsed.
+    pub(crate) fn detect_sample(data: &[u8], may_be_truncated: bool) -> Result<Self, CoreError> {
+        let mut best: Option<CandidateScore> = None;
 
-    for delimiter in DELIMITERS {
+        for delimiter in DELIMITERS {
+            let sample = complete_records(data, delimiter, may_be_truncated)?;
+
+            let Some(candidate) = CandidateScore::sample(sample, delimiter)? else {
+                continue;
+            };
+
+            if best.is_none_or(|current| candidate.better_than(current)) {
+                best = Some(candidate);
+            }
+        }
+
+        let delimiter = best.map_or(b',', |score| score.delimiter);
+
         let sample = complete_records(data, delimiter, may_be_truncated)?;
 
-        let Some(candidate) = CandidateScore::sample(sample, delimiter)? else {
-            continue;
-        };
+        let has_headers = best.is_some() && detect_headers(sample, delimiter)?;
 
-        if best.is_none_or(|current| candidate.better_than(current)) {
-            best = Some(candidate);
-        }
+        Ok(Self { delimiter, has_headers })
     }
-
-    let delimiter = best.map_or(b',', |score| score.delimiter);
-
-    let sample = complete_records(data, delimiter, may_be_truncated)?;
-
-    let has_headers = best.is_some() && detect_headers(sample, delimiter)?;
-
-    Ok(Self {
-        delimiter,
-        has_headers,
-    })
-}
 }
 
 impl CandidateScore {
@@ -195,7 +189,7 @@ fn looks_like_column_name(value: &str) -> bool {
 }
 
 /// Returns complete-record prefix of a potentially truncated sample.
-/// 
+///
 /// # Errors
 /// - Returns [`CoreError`] if sample cannot be parsed.
 fn complete_records(
@@ -206,7 +200,11 @@ fn complete_records(
     if !may_be_truncated {
         return Ok(data);
     }
-    let mut reader = ReaderBuilder::new().delimiter(delimiter).has_headers(false).flexible(true).from_reader(data);
+    let mut reader = ReaderBuilder::new()
+        .delimiter(delimiter)
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(data);
 
     let mut record = ByteRecord::new();
     let mut complete_end = 0;

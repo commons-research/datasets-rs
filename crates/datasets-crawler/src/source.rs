@@ -116,11 +116,11 @@ pub trait DatasetSource: Send + Sync {
 
     /// Opens a remote artifact for asynchronous reading.
     ///
-    /// Parameters:
+    /// # Parameters
     /// - `dataset_id`: Identifier of the dataset containing the artifact.
     /// - `artifact`: Metadata describing the artifact to open.
     ///
-    /// Errors:
+    /// # Errors
     /// - Returns an error if the artifact cannot be opened.
     fn open_artifact<'a>(
         &'a self,

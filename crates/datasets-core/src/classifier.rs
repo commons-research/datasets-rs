@@ -70,10 +70,9 @@ pub fn classify_artifact<R: Read>(
             let mut sample = Vec::new();
             reader.by_ref().take(DIALECT_BUFFER_SIZE).read_to_end(&mut sample)?;
 
-        let may_be_truncated =
-            u64::try_from(sample.len()) == Ok(DIALECT_BUFFER_SIZE);
+            let may_be_truncated = u64::try_from(sample.len()) == Ok(DIALECT_BUFFER_SIZE);
 
-        let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
+            let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
             let replay_reader = Cursor::new(sample).chain(reader);
 
             TabularVisitor::visit_with_dialect(replay_reader, &labelers, dialect)
@@ -217,48 +216,46 @@ broken,C(,garbage
         Ok(())
     }
 
-
-#[test]
-fn detects_dialect_with_incomplete_final_record() -> Result<(), CoreError> {
-    let sample = b"name;smiles;formula\n\
+    #[test]
+    fn detects_dialect_with_incomplete_final_record() -> Result<(), CoreError> {
+        let sample = b"name;smiles;formula\n\
 ethanol;CCO;C2H6O\n\
 water;O;H2O\n\
 broken;\"unfinished quoted field\n\
 still inside the quoted field";
 
-    let dialect = TabularDialect::detect_sample(sample, true)?;
+        let dialect = TabularDialect::detect_sample(sample, true)?;
 
-    assert_eq!(dialect.delimiter(), b';');
-    assert!(dialect.has_headers());
+        assert_eq!(dialect.delimiter(), b';');
+        assert!(dialect.has_headers());
 
-    Ok(())
-}
+        Ok(())
+    }
 
-#[test]
-fn detects_dialect_with_truncated_utf8() -> Result<(), CoreError> {
-    let sample = b"name;smiles;formula\n\
+    #[test]
+    fn detects_dialect_with_truncated_utf8() -> Result<(), CoreError> {
+        let sample = b"name;smiles;formula\n\
 ethanol;CCO;C2H6O\n\
 water;O;H2O\n\
 broken;\xC3";
 
-    let dialect = TabularDialect::detect_sample(sample, true)?;
+        let dialect = TabularDialect::detect_sample(sample, true)?;
 
-    assert_eq!(dialect.delimiter(), b';');
-    assert!(dialect.has_headers());
+        assert_eq!(dialect.delimiter(), b';');
+        assert!(dialect.has_headers());
 
-    Ok(())
-}
+        Ok(())
+    }
 
-#[test]
-fn detects_complete_sample_without_trailing_newline() -> Result<(), CoreError> {
-    let sample = b"name;smiles\nethanol;CCO\nwater;O";
+    #[test]
+    fn detects_complete_sample_without_trailing_newline() -> Result<(), CoreError> {
+        let sample = b"name;smiles\nethanol;CCO\nwater;O";
 
-    let dialect = TabularDialect::detect_sample(sample, false)?;
+        let dialect = TabularDialect::detect_sample(sample, false)?;
 
-    assert_eq!(dialect.delimiter(), b';');
-    assert!(dialect.has_headers());
+        assert_eq!(dialect.delimiter(), b';');
+        assert!(dialect.has_headers());
 
-    Ok(())
-}
-
+        Ok(())
+    }
 }

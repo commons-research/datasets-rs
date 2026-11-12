@@ -29,46 +29,21 @@ pub struct Args {
     content_types: Vec<ContentType>,
 
     /// Physical file formats to inspect, comma separated.
-    #[arg(
-        long,
-        value_delimiter = ',',
-        required_unless_present = "default",
-        env = "DATASETS_CRAWLER_FORMATS"
-    )]
+    #[arg(long, value_delimiter = ',', env = "DATASETS_CRAWLER_FORMATS")]
     formats: Vec<FileFormat>,
 
-    /// Use only canonical search terms.
-    #[arg(long, env = "DATASETS_CRAWLER_STRICT")]
-    strict: bool,
-
-    /// Additional metadata terms; all non-empty terms must match.
+    /// Optional metadata search terms for dataset discovery.
     #[arg(
-        long = "filter-term",
+        long = "search-term",
         action = clap::ArgAction::Append,
         value_delimiter = ',',
-        env = "DATASETS_CRAWLER_FILTER_TERMS"
+        env = "DATASETS_CRAWLER_SEARCH_TERMS"
     )]
-    filter_terms: Vec<String>,
+    search_terms: Vec<String>,
 
-    /// Maximum number of unique datasets to inspect.
-    #[arg(long, env = "DATASETS_CRAWLER_MAX_DATASETS")]
-    max_datasets: Option<usize>,
-
-    /// Maximum results returned per search term.
-    #[arg(long, env = "DATASETS_CRAWLER_RETURNS_PER_TERM")]
-    returns_per_term: Option<usize>,
-
-    /// Maximum repository entries retrieved per dataset.
-    #[arg(long, env = "DATASETS_CRAWLER_MAX_TREE_ENTRIES")]
-    max_tree_entries: Option<usize>,
-
-    /// Maximum artifacts inspected per dataset.
-    #[arg(long, env = "DATASETS_CRAWLER_MAX_ARTIFACTS_PER_DATASET")]
-    max_artifacts_per_dataset: Option<usize>,
-
-    /// Maximum file size in decimal MB.
-    #[arg(long, env = "DATASETS_CRAWLER_MAX_FILE_SIZE_MB")]
-    max_file_size_mb: Option<u64>,
+    /// Maximum number of unique repositories to inspect.
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_REPOSITORIES")]
+    max_repositories: Option<usize>,
 }
 
 /// Fully resolved CLI configuration.
@@ -77,22 +52,12 @@ pub struct ResolvedArgs {
     pub source: SourceArg,
     /// Scientific content types to classify.
     pub content_types: Vec<ContentType>,
-    /// Physical file formats to inspect.
-    pub formats: Vec<FileFormat>,
-    /// Whether to use only canonical search terms.
-    pub strict: bool,
-    /// Additional metadata terms used to filter search results.
-    pub filter_terms: Vec<String>,
-    /// Maximum number of unique datasets to inspect.
-    pub max_datasets: Option<usize>,
-    /// Maximum results returned per search term.
-    pub returns_per_term: Option<usize>,
-    /// Maximum repository entries retrieved per dataset.
-    pub max_tree_entries: Option<usize>,
-    /// Maximum artifacts inspected per dataset.
-    pub max_artifacts_per_dataset: Option<usize>,
-    /// Maximum permitted file size in decimal megabytes.
-    pub max_file_size_mb: Option<u64>,
+    /// Optional file-format restrictions.
+    pub formats: Option<Vec<FileFormat>>,
+    /// Optional search terms for dataset discovery.
+    pub search_terms: Option<Vec<String>>,
+    /// Maximum number of repositories to inspect.
+    pub max_repositories: Option<usize>,
 }
 
 impl Args {
@@ -112,31 +77,14 @@ impl Args {
             self.content_types
         };
 
-        let formats = if self.formats.is_empty() {
-            vec![FileFormat::Csv, FileFormat::Json]
-        } else {
-            self.formats
-        };
+        let formats = if self.formats.is_empty() { None } else { Some(self.formats) };
 
-        ResolvedArgs {
-            source,
-            content_types,
-            formats,
-            strict: self.strict,
-            filter_terms: self.filter_terms,
+        let search_terms =
+            if self.search_terms.is_empty() { None } else { Some(self.search_terms) };
 
-            max_datasets: self.max_datasets.or_else(|| self.default.then_some(50)),
+        let max_repositories = self.max_repositories.or_else(|| self.default.then_some(50));
 
-            returns_per_term: self.returns_per_term.or_else(|| self.default.then_some(10)),
-
-            max_tree_entries: self.max_tree_entries.or_else(|| self.default.then_some(500)),
-
-            max_artifacts_per_dataset: self
-                .max_artifacts_per_dataset
-                .or_else(|| self.default.then_some(10)),
-
-            max_file_size_mb: self.max_file_size_mb.or_else(|| self.default.then_some(10)),
-        }
+        ResolvedArgs { source, content_types, formats, search_terms, max_repositories }
     }
 }
 

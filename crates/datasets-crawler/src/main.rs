@@ -58,27 +58,16 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
     let config = CrawlConfig {
         content_types: args.content_types,
         formats: args.formats,
-        strict: args.strict,
-        filter_terms: args.filter_terms,
-        max_datasets: args.max_datasets,
-        results_per_term: args.returns_per_term,
-        max_tree_entries: args.max_tree_entries,
-        max_artifacts_per_dataset: args.max_artifacts_per_dataset,
-        max_file_size_bytes: args
-            .max_file_size_mb
-            .map(|megabytes| megabytes.saturating_mul(1_000_000)),
+        search_terms: args.search_terms,
+        max_repositories: args.max_repositories,
     };
 
     info!(
         source = ?selected_source,
-        content_type = ?config.content_types,
+        content_types = ?config.content_types,
         formats = ?config.formats,
-        strict = config.strict,
-        max_datasets = config.max_datasets,
-        results_per_term = config.results_per_term,
-        max_tree_entries = config.max_tree_entries,
-        max_artifacts_per_dataset = config.max_artifacts_per_dataset,
-        max_file_size_bytes = config.max_file_size_bytes,
+        search_terms = ?config.search_terms,
+        max_repositories = config.max_repositories,
         "starting crawl",
     );
 

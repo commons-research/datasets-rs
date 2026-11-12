@@ -1,4 +1,3 @@
-
 use thiserror::Error;
 
 /// Errors produced while inspecting dataset contents.
