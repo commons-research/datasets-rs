@@ -1,11 +1,10 @@
-use std::{collections::HashSet, path::Path};
+use std::{collections::HashSet, time::Duration};
 
-use datasets_core::{ArtifactFormat, ContentType};
+use datasets_core::{ArtifactFormat, ContentType, InspectionLimits};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary, FileFormat};
-use crate::SourceArtifact;
+use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary, FileFormat, SourceArtifact, reader::BlockingReader};
 
 /// Configuration for a repository-independent crawl.
 #[derive(Debug, Clone)]
@@ -21,6 +20,10 @@ pub struct CrawlConfig {
     /// Maximum number of repositories to inspect, if not provided will crawl
     /// all available repositories.
     pub max_repositories: Option<usize>,
+    /// Bounds on how much of each artifact is read and inspected. 
+    pub limits: InspectionLimits,
+    /// Longest an artifact stream may go without delivering bytes before abandoning.
+    pub stall_timeout: Duration,
 }
 
 /// Current state of crawl
@@ -69,8 +72,8 @@ struct DatasetStats {
     indexed_artifacts: usize,
     /// Number of artifacts skipped because their format was unsupported.
     skipped_unsupported_format: usize,
-    /// Number of artifact downloads that failed.
-    download_failures: usize,
+    /// Number of artifacts with streams that could not be opened.
+    open_failures: usize,
     /// Number of artifact classification attempts that failed.
     classification_failures: usize,
 }
@@ -95,18 +98,6 @@ struct SearchResultStats {
     interrupted: bool,
 }
 
-/// A downloaded artifact ready for classification.
-struct DownloadedArtifact<'a> {
-    /// Dataset containing the artifact.
-    dataset: &'a DatasetSummary,
-    /// Repository-relative path to the artifact.
-    path: &'a str,
-    /// Format selected for inspection.
-    format: ArtifactFormat,
-    /// Downloaded artifact contents.
-    data: Vec<u8>,
-}
-
 /// Discovers, inspects, classifies datasets
 ///
 /// # Errors
@@ -128,7 +119,7 @@ pub async fn crawl<S: DatasetSource>(
         source,
         config,
         cancellation,
-        crawler: Crawler::new(&config.content_types),
+        crawler: Crawler::new(&config.content_types, config.limits),
         warnings: Vec::new(),
     };
 
@@ -273,7 +264,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         }
     }
 
-    /// Inspects and classifies individual artifacts.
+    /// Streams one artifact through classification and indexes the result.
     async fn inspect_artifact(
         &mut self,
         dataset: &DatasetSummary,
@@ -284,92 +275,78 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         else {
             return InspectionOutcome::Completed;
         };
-        let Some(data) = self.download_artifact(dataset, artifact, stats).await else {
-            return self.inspection_outcome();
-        };
 
-        self.classify_and_index(
-            DownloadedArtifact { dataset, path: &artifact.path, format, data },
-            stats,
-        );
-        InspectionOutcome::Completed
-    }
+        let source = self.source;
+        let cancellation = self.cancellation;
 
-    /// Downloads an artifact from the remote dataset
-    async fn download_artifact(
-        &mut self,
-        dataset: &DatasetSummary,
-        artifact: &SourceArtifact,
-        stats: &mut DatasetStats,
-    ) -> Option<Vec<u8>> {
         debug!(
             dataset_id = %dataset.id,
             artifact_path = %artifact.path,
             artifact_size_bytes = artifact.size_bytes,
-            "downloading supported artifact"
+            "opening artifact stream"
         );
 
-        let result = tokio::select! {
+        let opened = tokio::select! {
             biased;
 
-            () = self.cancellation.cancelled() => {
+            () = cancellation.cancelled() => {
                 info!(
                     dataset_id = %dataset.id,
                     artifact_path = %artifact.path,
-                    "interrupted while downloading artifact"
+                    "interrupted while opening artifact"
                 );
-                return None;
+                return InspectionOutcome::Interrupted;
             }
-            result = self.source.open_artifact(
-                &dataset.id,
-                artifact
-            ) => result,
+            opened = source.open_artifact(&dataset.id, artifact) => opened,
         };
 
-        match result {
-            Ok(data) => Some(data),
+        let stream = match opened {
+            Ok(stream) => stream,
             Err(error) => {
-                stats.download_failures += 1;
+                stats.open_failures += 1;
                 warn!(
                     dataset_id = %dataset.id,
                     artifact_path = %artifact.path,
                     error = %error,
-                    "failed to download artifact; skipping artifact"
+                    "failed to open artifact; skipping artifact"
                 );
-                self.warnings.push(format!(
-                    "Could not download {} from {}: {error}",
-                    artifact.path, dataset.id,
-                ));
-                None
+                self.warnings.push(format!("Could not open {} from {}: {error}", artifact.path, dataset.id));
+                return InspectionOutcome::Completed;
             }
-        }
-    }
-
-    /// Classifies a downloaded artifact and adds its results to the index.
-    fn classify_and_index(&mut self, artifact: DownloadedArtifact<'_>, stats: &mut DatasetStats) {
+        };
+        
+        let reader = BlockingReader::new(stream, cancellation, self.config.stall_timeout);
         let candidate = CandidateArtifact::new(
-            artifact.dataset.id.clone(),
-            artifact.dataset.url.clone(),
+            dataset.id.clone(),
+            dataset.url.clone(),
             artifact.path.to_owned(),
-            artifact.format,
-            artifact.data,
-        );
+            format,
+            );
 
-        match self.crawler.process(candidate) {
-            Ok(()) => {
-                stats.indexed_artifacts += 1;
+        let crawler = &mut self.crawler;
+        let result = tokio::task::block_in_place(|| crawler.process(candidate, reader));
 
-                debug!(
-                    dataset_id = %artifact.dataset.id,
-                    artifact_path = %artifact.path,
-                    "artifact classified and indexed"
-                );
-            }
+                    match result {
+            Ok(indexed) => {
+                stats.indexed_artifacts = 1;
+                let inspection = indexed.inspection();
+                info!(
+                    dataset_id = %dataset.id,
+                     artifact_path = %artifact.path,
+                    artifact_size_bytes = artifact.size_bytes,
+                    bytes_read = inspection.bytes,
+                    records = inspection.records,
+                    stop = ?inspection.stop,
+                     "artifact classified and indexed"
+                 );
+             }
+
+             Err(_) if cancellation.is_cancelled() => {}
             Err(error) => {
                 stats.classification_failures += 1;
 
                 warn!(
-                    dataset_id = %artifact.dataset.id,
+                    dataset_id = %dataset.id,
                     artifact_path = %artifact.path,
                     error = %error,
                     "failed to classify artifact"
@@ -377,10 +354,11 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
                 self.warnings.push(format!(
                     "Could not classify {} from {}: {error}",
-                    artifact.path, artifact.dataset.id
+                    artifact.path, dataset.id
                 ));
             }
         }
+        self.inspection_outcome()
     }
 
     /// Searches for datasets using configured scientific search terms
@@ -529,25 +507,10 @@ fn select_artifact_format(
     config: &CrawlConfig,
     stats: &mut DatasetStats,
 ) -> Option<ArtifactFormat> {
-    let Some(extension) = Path::new(artifact_path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase)
-    else {
+    let Some(file_format) = FileFormat::from_path(artifact_path) else {
         stats.skipped_unsupported_format += 1;
-        debug!(dataset_id, artifact_path, "skipping artifact with unknown format");
+        debug!(dataset_id, artifact_path, "skipping unsupported artifact format");
         return None;
-    };
-
-    let file_format = match extension.as_str() {
-        "csv" => FileFormat::Csv,
-        "json" => FileFormat::Json,
-        "txt" | "text" | "plain-text" => FileFormat::PlainText,
-        _ => {
-            stats.skipped_unsupported_format += 1;
-            debug!(dataset_id, artifact_path, "skipping unsupported artifact format");
-            return None;
-        }
     };
 
     if config.formats.as_ref().is_some_and(|formats| !formats.contains(&file_format)) {
@@ -570,8 +533,218 @@ fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: 
         repository_artifact_count,
         indexed_artifacts = stats.indexed_artifacts,
         skipped_unsupported_format = stats.skipped_unsupported_format,
-        download_failures = stats.download_failures,
+        open_failures = stats.open_failures,
         classification_failures = stats.classification_failures,
         "finished inspecting dataset"
     );
+}
+
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
+    use std::{
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    use datasets_core::StopReason;
+    use futures::{AsyncRead, io::Cursor};
+
+    use super::*;
+
+    /// One artifact served by the mock source.
+    #[derive(Clone)]
+    enum MockContent {
+        /// Bytes delivered normally.
+        Bytes(Vec<u8>),
+        /// A stream that never delivers anything.
+        Stalled,
+    }
+
+    /// Reader served by the mock source.
+    enum MockReader {
+        /// Reads from memory.
+        Bytes(Cursor<Vec<u8>>),
+        /// Never becomes ready.
+        Stalled,
+    }
+
+    impl AsyncRead for MockReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            match self.get_mut() {
+                Self::Bytes(cursor) => Pin::new(cursor).poll_read(cx, buf),
+                Self::Stalled => Poll::Pending,
+            }
+        }
+    }
+
+    /// In-memory dataset source with one dataset.
+    struct MockSource {
+        /// Files in the dataset, by path.
+        files: Vec<(&'static str, MockContent)>,
+    }
+
+    impl DatasetSource for MockSource {
+        async fn discover_datasets(
+            &self,
+            _query: Option<&str>,
+            _limit: Option<usize>,
+        ) -> Result<Vec<DatasetSummary>, CrawlerError> {
+            Ok(vec![DatasetSummary {
+                id: "mock/dataset".to_owned(),
+                url: "https://example.org/mock/dataset".to_owned(),
+                searchable_metadata: String::new(),
+            }])
+        }
+
+        async fn list_artifacts(
+            &self,
+            _dataset_id: &str,
+        ) -> Result<Vec<SourceArtifact>, CrawlerError> {
+            Ok(self
+                .files
+                .iter()
+                .map(|(path, content)| {
+                    let size_bytes = match content {
+                        MockContent::Bytes(bytes) => u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                        MockContent::Stalled => 0,
+                    };
+                    SourceArtifact { path: (*path).to_owned(), size_bytes }
+                })
+                .collect())
+        }
+
+        async fn open_artifact<'a>(
+            &'a self,
+            _dataset_id: &'a str,
+            artifact: &'a SourceArtifact,
+        ) -> Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError> {
+            let content = self
+                .files
+                .iter()
+                .find(|(path, _)| *path == artifact.path)
+                .map(|(_, content)| content.clone())
+                .ok_or_else(|| CrawlerError::ParseFileFormat(artifact.path.clone()))?;
+
+            Ok(match content {
+                MockContent::Bytes(bytes) => MockReader::Bytes(Cursor::new(bytes)),
+                MockContent::Stalled => MockReader::Stalled,
+            })
+        }
+    }
+
+    /// Crawl configuration used by the tests.
+    fn config(limits: InspectionLimits) -> CrawlConfig {
+        CrawlConfig {
+            content_types: vec![ContentType::Smiles],
+            formats: None,
+            search_terms: None,
+            max_repositories: None,
+            limits,
+            stall_timeout: Duration::from_millis(200),
+        }
+    }
+
+    /// A CSV file with a header and `rows` SMILES rows.
+    fn smiles_csv(rows: usize) -> MockContent {
+        MockContent::Bytes(format!("name,smiles\n{}", "ethanol,CCO\n".repeat(rows)).into_bytes())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn crawls_streamed_artifacts_into_the_index() -> Result<(), CrawlerError> {
+        let source = MockSource {
+            files: vec![
+                ("data.csv", smiles_csv(100)),
+                (
+                    "records.jsonl",
+                    MockContent::Bytes(b"{\"smiles\": \"CCO\"}\n{\"smiles\": \"O\"}\n".to_vec()),
+                ),
+                ("README.md", MockContent::Bytes(b"# readme".to_vec())),
+            ],
+        };
+
+        let report =
+            crawl(&source, &config(InspectionLimits::UNLIMITED), &CancellationToken::new()).await?;
+
+        assert_eq!(report.status(), CrawlStatus::Completed, "crawl should complete");
+        assert!(report.warnings().is_empty(), "no warnings expected: {:?}", report.warnings());
+
+        let matches: Vec<_> = report.crawler().index().search(ContentType::Smiles).collect();
+        assert_eq!(matches.len(), 2, "the CSV and the JSON Lines file should both match");
+        assert!(
+            matches.iter().all(|artifact| artifact.inspection().is_complete()),
+            "small artifacts should be inspected completely"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stops_reading_at_the_record_limit() -> Result<(), CrawlerError> {
+        let source = MockSource { files: vec![("data.csv", smiles_csv(100_000))] };
+        let limits = InspectionLimits { max_records: Some(50), max_bytes: None };
+
+        let report = crawl(&source, &config(limits), &CancellationToken::new()).await?;
+
+        let indexed: Vec<_> = report.crawler().index().artifacts().collect();
+        assert_eq!(indexed.len(), 1, "the artifact should be indexed");
+
+        let inspection = indexed[0].inspection();
+        assert_eq!(inspection.records, 50, "only the limited number of records should be read");
+        assert_eq!(inspection.stop, StopReason::RecordLimit, "the record limit should stop it");
+        assert!(
+            inspection.bytes < 200_000,
+            "most of the 1.2 MB artifact should never be read, read {}",
+            inspection.bytes
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stalled_artifact_is_skipped_with_a_warning() -> Result<(), CrawlerError> {
+        let source = MockSource {
+            files: vec![("stalled.csv", MockContent::Stalled), ("data.csv", smiles_csv(10))],
+        };
+
+        let report =
+            crawl(&source, &config(InspectionLimits::UNLIMITED), &CancellationToken::new()).await?;
+
+        assert_eq!(report.status(), CrawlStatus::Completed, "a stalled file is not fatal");
+        assert_eq!(report.warnings().len(), 1, "the stalled artifact should be reported");
+        assert_eq!(
+            report.crawler().index().search(ContentType::Smiles).count(),
+            1,
+            "the artifact after the stalled one should still be indexed"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cancellation_interrupts_a_stalled_read() -> Result<(), CrawlerError> {
+        let source = MockSource { files: vec![("stalled.csv", MockContent::Stalled)] };
+        let mut config = config(InspectionLimits::UNLIMITED);
+        config.stall_timeout = Duration::from_hours(1);
+
+        let cancellation = CancellationToken::new();
+        let trigger = cancellation.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            trigger.cancel();
+        });
+
+        let report = crawl(&source, &config, &cancellation).await?;
+
+        assert_eq!(report.status(), CrawlStatus::Interrupted, "crawl should report interruption");
+        assert!(report.warnings().is_empty(), "cancellation is not a warning");
+
+        Ok(())
+    }
 }

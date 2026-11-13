@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use datasets_core::ContentType;
+use datasets_core::{ContentType, InspectionLimits};
 use datasets_crawler::FileFormat;
 
 /// CLI configuration for the dataset crawler.
@@ -44,6 +44,15 @@ pub struct Args {
     /// Maximum number of unique repositories to inspect.
     #[arg(long, env = "DATASETS_CRAWLER_MAX_REPOSITORIES")]
     max_repositories: Option<usize>,
+
+    
+    /// Maximum number of records inspected per artifact.
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_RECORDS")]
+    max_records: Option<usize>,
+
+    /// Maximum decimal megabytes read per artifact.
+    #[arg(long, env = "DATASETS_CRAWLER_MAX_ARTIFACT_MB")]
+    max_artifact_mb: Option<u64>,
 }
 
 /// Fully resolved CLI configuration.
@@ -58,6 +67,8 @@ pub struct ResolvedArgs {
     pub search_terms: Option<Vec<String>>,
     /// Maximum number of repositories to inspect.
     pub max_repositories: Option<usize>,
+    /// Bounds on how much of each artifact is inspected.
+    pub limits: InspectionLimits,
 }
 
 impl Args {
@@ -84,7 +95,11 @@ impl Args {
 
         let max_repositories = self.max_repositories.or_else(|| self.default.then_some(50));
 
-        ResolvedArgs { source, content_types, formats, search_terms, max_repositories }
+        let limits = InspectionLimits {
+            max_records: self.max_records.or_else(|| self.default.then_some(10_000)),
+            max_bytes: self.max_artifact_mb.or_else(|| self.default.then_some(64)).map(|megabytes| megabytes.saturating_mul(1_000_000)),
+        };
+        ResolvedArgs { source, content_types, formats, search_terms, max_repositories, limits }
     }
 }
 
