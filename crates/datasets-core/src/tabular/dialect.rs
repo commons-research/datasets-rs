@@ -33,11 +33,6 @@ struct CandidateScore {
 }
 
 impl TabularDialect {
-    /// Standard CSV configuration.
-    #[must_use]
-    pub(crate) const fn csv() -> Self {
-        Self { delimiter: b',', has_headers: true }
-    }
     /// Returns selected delimiter
     #[must_use]
     pub(crate) const fn delimiter(self) -> u8 {
@@ -73,7 +68,7 @@ impl TabularDialect {
 
         let sample = complete_records(data, delimiter, may_be_truncated)?;
 
-        let has_headers = best.is_some() && detect_headers(sample, delimiter)?;
+        let has_headers = detect_headers(sample, delimiter)?;
 
         Ok(Self { delimiter, has_headers })
     }
@@ -94,7 +89,7 @@ impl CandidateScore {
         let mut frequencies = BTreeMap::<usize, usize>::new();
         let mut sampled = 0usize;
 
-        for result in reader.records().take(SAMPLE_RECORDS) {
+        for result in reader.byte_records().take(SAMPLE_RECORDS) {
             let record = result?;
             if record.is_empty() {
                 continue;
@@ -130,7 +125,7 @@ impl CandidateScore {
     }
 }
 
-/// Estimated guess whether first record contains column names. 
+/// Estimates whether the first record contains column names.
 ///
 /// # Errors
 /// - Returns [`CoreError`] if sampled records cannot be parsed
@@ -150,7 +145,7 @@ fn detect_headers(data: &[u8], delimiter: u8) -> Result<bool, CoreError> {
     if records.next().transpose()?.is_none() {
         return Ok(false);
     }
-    
+
     let mut seen = BTreeSet::new();
 
     for cell in &first {
@@ -158,18 +153,12 @@ fn detect_headers(data: &[u8], delimiter: u8) -> Result<bool, CoreError> {
             return Ok(false);
         };
         let cell = cell.trim();
-        if cell.is_empty() || cell.parse::<f64>().is_ok() || !seen.insert(cell.to_ascii_lowercase()) {
-            return Ok(false)
+        if cell.is_empty() || cell.parse::<f64>().is_ok() || !seen.insert(cell.to_ascii_lowercase())
+        {
+            return Ok(false);
         }
     }
     Ok(true)
-}
-
-/// Recognizes common tabular column labels
-fn looks_like_column_name(value: &str) -> bool {
-    let name = value.trim().to_ascii_lowercase();
-
-    matches!(name.as_str(), "id" | "name" | "label" | "value")
 }
 
 /// Returns complete-record prefix of a potentially truncated sample.

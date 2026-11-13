@@ -8,6 +8,8 @@ mod classifier;
 mod content;
 /// Error handling
 mod error;
+/// Inspects limits and artifact results while visiting
+mod inspection;
 /// JSON data traversal and inspection.
 mod json;
 /// Labeling dataset item requirements
@@ -18,8 +20,6 @@ mod labels;
 mod tabular;
 /// Defines visitor functionality
 mod visitor;
-/// Inspects artifacts while visiting
-mod inspection;
 
 pub use classification::Classification;
 pub use classifier::{ArtifactFormat, Classifier, classify_artifact};

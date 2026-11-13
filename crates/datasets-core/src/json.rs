@@ -2,7 +2,12 @@ use std::{collections::BTreeMap, fmt, io::Read};
 
 use serde::de::{DeserializeSeed, Deserializer, Error as _, MapAccess, SeqAccess};
 
-use super::{Classification, CoreError, inspection::{InspectionLimits, StopReason, Visit},labeler::Labeler, visitor::Visitor};
+use super::{
+    Classification, CoreError,
+    inspection::{InspectionLimits, StopReason, Visit},
+    labeler::Labeler,
+    visitor::Visitor,
+};
 
 /// Maximum number of distinct locations tracked in one artifact.
 const MAX_LOCATIONS: usize = 10_000;
@@ -11,14 +16,12 @@ const MAX_LOCATIONS: usize = 10_000;
 pub struct JsonVisitor;
 
 impl Visitor for JsonVisitor {
-    /// Inspects JSON data using the provided scientific labelers.
-    ///
-    /// # Parameters
-    /// - `reader`: Input containing JSON data.
-    /// - `labelers`: Scientific labelers used to evaluate string values.
+    /// Inspects JSON or JSON Lines data using the provided
+    /// scientific labelers without loading into memory.
     ///
     /// # Errors
-    /// - Returns [`CoreError`] when the JSON input cannot be parsed.
+    ///  - Returns [`CoreError`] if the input fails before any evidence is
+    ///    collected.
     fn visit<R: Read>(
         reader: R,
         labelers: &[&dyn Labeler],
@@ -43,7 +46,7 @@ impl Visitor for JsonVisitor {
             }
 
             let records_before = state.records;
-            let walker = Walker {state: &mut state, depth: 0};
+            let walker = Walker { state: &mut state, depth: 0 };
 
             if let Err(error) = walker.deserialize(&mut deserializer) {
                 if state.record_limit_hit {
@@ -105,7 +108,8 @@ impl WalkState<'_> {
             if self.evidence.len() >= MAX_LOCATIONS {
                 return;
             }
-            self.evidence.insert(self.path.clone(), vec![EvidenceStats::default(); self.labelers.len()]);
+            self.evidence
+                .insert(self.path.clone(), vec![EvidenceStats::default(); self.labelers.len()]);
         }
 
         let Some(stats) = self.evidence.get_mut(self.path.as_str()) else {
@@ -138,7 +142,6 @@ impl WalkState<'_> {
         classifications
     }
 }
-
 
 /// Walks one JSON value as it is parsed, without building it in memory.
 struct Walker<'s, 'l> {
@@ -227,9 +230,6 @@ impl<'de> serde::de::Visitor<'de> for Walker<'_, '_> {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
@@ -245,34 +245,17 @@ mod tests {
         let json = r#"
         {
             "compounds": [
-                {
-                    "name": "ethanol",
-                    "smiles": "CCO"
-                },
-                {
-                    "name": "acetic acid",
-                    "smiles": "CC(=O)O"
-                },
-                {
-                    "name": "broken",
-                    "smiles": "garbage"
-                }
+                {"name": "ethanol", "smiles": "CCO"},
+                {"name": "acetic acid", "smiles": "CC(=O)O"},
+                {"name": "broken", "smiles": "garbage"}
             ],
-            "canonical_smiles": [
-                "CCO",
-                "CC(=O)O",
-                "C("
-            ]
+             "canonical_smiles": ["CCO", "CC(=O)O", "C("]
         }
         "#;
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = JsonVisitor::visit(
-            json.as_bytes(),
-            &labelers,
-            InspectionLimits::default(),
-        )?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, InspectionLimits::default())?;
 
         let expected = vec![
             Classification::new(Smiles, "$.canonical_smiles[]", 3, 2),
@@ -298,16 +281,9 @@ mod tests {
         }
         "#;
 
-        let labelers: [&dyn Labeler; 2] = [
-            &SmilesLabeler,
-            &MolecularFormulaLabeler,
-        ];
+        let labelers: [&dyn Labeler; 2] = [&SmilesLabeler, &MolecularFormulaLabeler];
 
-        let visit = JsonVisitor::visit(
-            json.as_bytes(),
-            &labelers,
-            InspectionLimits::default(),
-        )?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, InspectionLimits::default())?;
 
         assert!(
             visit.classifications.iter().any(|classification| {
@@ -348,20 +324,11 @@ mod tests {
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let limits = InspectionLimits {
-            max_records: Some(2),
-            ..InspectionLimits::default()
-        };
+        let limits = InspectionLimits { max_records: Some(2), ..InspectionLimits::default() };
 
-        let visit = JsonVisitor::visit(
-            json.as_bytes(),
-            &labelers,
-            limits,
-        )?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, limits)?;
 
-        let expected = vec![
-            Classification::new(Smiles, "$[].smiles", 2, 2),
-        ];
+        let expected = vec![Classification::new(Smiles, "$[].smiles", 2, 2)];
 
         assert_eq!(visit.classifications, expected);
         assert_eq!(visit.records, 2);
@@ -381,20 +348,98 @@ mod tests {
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = JsonVisitor::visit(
-            json.as_bytes(),
-            &labelers,
-            InspectionLimits::default(),
-        )?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, InspectionLimits::default())?;
 
-        let expected = vec![
-            Classification::new(Smiles, "$[].smiles", 1, 1),
-        ];
+        let expected = vec![Classification::new(Smiles, "$[].smiles", 1, 1)];
 
         assert_eq!(visit.classifications, expected);
         assert_eq!(visit.records, 1);
         assert!(matches!(visit.stop, StopReason::Error(_)));
 
         Ok(())
+    }
+
+    #[test]
+    fn visits_json_lines_one_record_per_line() -> Result<(), CoreError> {
+        let jsonl = "{\"smiles\": \"CCO\"}\n{\"smiles\": \"O\"}\n{\"smiles\": \"C(\"}\n";
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        let visit = JsonVisitor::visit(jsonl.as_bytes(), &labelers, InspectionLimits::UNLIMITED)?;
+
+        assert_eq!(
+            visit.classifications,
+            vec![Classification::new(Smiles, "$.smiles", 3, 2)],
+            "every line should contribute to the same location"
+        );
+        assert_eq!(visit.records, 3, "each line is one record");
+
+        Ok(())
+    }
+
+    #[test]
+    fn stops_top_level_array_at_record_limit() -> Result<(), CoreError> {
+        let json = r#"[{"smiles": "CCO"}, {"smiles": "O"}, {"smiles": "CC"}, {"smiles": "N"}]"#;
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+        let limits = InspectionLimits { max_records: Some(2), max_bytes: None };
+
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, limits)?;
+
+        assert_eq!(
+            visit.classifications,
+            vec![Classification::new(Smiles, "$[].smiles", 2, 2)],
+            "only the first two elements should be inspected"
+        );
+        assert_eq!(visit.records, 2, "two records should be counted");
+        assert_eq!(visit.stop, StopReason::RecordLimit, "the record limit should end the visit");
+
+        Ok(())
+    }
+
+    #[test]
+    fn stops_json_lines_at_record_limit() -> Result<(), CoreError> {
+        let jsonl = "{\"smiles\": \"CCO\"}\n{\"smiles\": \"O\"}\n{\"smiles\": \"CC\"}\n";
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+        let limits = InspectionLimits { max_records: Some(2), max_bytes: None };
+
+        let visit = JsonVisitor::visit(jsonl.as_bytes(), &labelers, limits)?;
+
+        assert_eq!(visit.records, 2, "two lines should be inspected");
+        assert_eq!(visit.stop, StopReason::RecordLimit, "the record limit should end the visit");
+
+        Ok(())
+    }
+
+    #[test]
+    fn keeps_evidence_when_json_is_cut_short() -> Result<(), CoreError> {
+        let json = r#"[{"smiles": "CCO"}, {"smiles": "O"}, {"smi"#;
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, InspectionLimits::UNLIMITED)?;
+
+        assert_eq!(
+            visit.classifications,
+            vec![Classification::new(Smiles, "$[].smiles", 2, 2)],
+            "evidence collected before the failure should be kept"
+        );
+        assert!(
+            matches!(visit.stop, StopReason::Error(_)),
+            "the failure should be reported as the stop reason"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn fails_when_no_evidence_could_be_collected() {
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        assert!(
+            JsonVisitor::visit(&b"{not json"[..], &labelers, InspectionLimits::UNLIMITED).is_err(),
+            "unparseable input without evidence should be an error"
+        );
     }
 }

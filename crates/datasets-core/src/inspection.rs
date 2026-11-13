@@ -2,7 +2,7 @@ use std::io::{self, Read};
 
 use super::Classification;
 
-/// Bounds on how much of one artifact is inspected. 
+/// Bounds on how much of one artifact is inspected.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InspectionLimits {
     /// Maximum number of records to inspect.
@@ -12,8 +12,8 @@ pub struct InspectionLimits {
 }
 
 impl InspectionLimits {
-    /// Inspects whole artifacts, no matter artifact size. 
-    pub const UNLIMITED: Self = Self { max_records: None, max_bytes: None};
+    /// Inspects whole artifacts, no matter artifact size.
+    pub const UNLIMITED: Self = Self { max_records: None, max_bytes: None };
 }
 
 /// Reason the artifact's inspection ended.
@@ -43,14 +43,14 @@ pub struct Inspection {
 }
 
 impl Inspection {
-    /// Returns status of whole artifact inspection. 
+    /// Returns status of whole artifact inspection.
     #[must_use]
     pub fn is_complete(&self) -> bool {
         self.stop == StopReason::EndOfInput
     }
 }
 
-/// Report visitor returns to the classifier.
+/// Report that the visitor returns to the classifier.
 #[derive(Debug)]
 pub struct Visit {
     /// Evidence collected per content type and location.
@@ -76,12 +76,7 @@ pub struct BudgetReader<R> {
 impl<R> BudgetReader<R> {
     /// Wraps the reader with the optional budget.
     pub const fn new(inner: R, max_bytes: Option<u64>) -> Self {
-        Self {
-            inner,
-            bytes_read: 0,
-            max_bytes,
-            limit_hit: false
-        }
+        Self { inner, bytes_read: 0, max_bytes, limit_hit: false }
     }
     /// Returns number of bytes read currently.
     pub const fn bytes_read(&self) -> u64 {
@@ -104,10 +99,39 @@ impl<R: Read> Read for BudgetReader<R> {
                 }
                 usize::try_from(remaining).unwrap_or(usize::MAX).min(buf.len())
             }
-            None => buf.len()
+            None => buf.len(),
         };
         let read = self.inner.read(&mut buf[..allowed])?;
-        self.bytes_read += u64::try_from(read).unwrap_or(u64::MAX);
+        self.bytes_read = u64::try_from(read).unwrap_or(u64::MAX);
         Ok(read)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+    use super::*;
+
+    #[test]
+    fn budget_reader_stops_at_the_byte_limit() -> io::Result<()> {
+        let mut reader = BudgetReader::new(&b"0123456789"[..], Some(4));
+        let mut out = Vec::new();
+        reader.read_to_end(&mut out)?;
+
+        assert_eq!(out, b"0123", "only the budgeted bytes should be read");
+        assert_eq!(reader.bytes_read(), 4, "bytes read should match the budget");
+        assert!(reader.limit_hit(), "the budget should be reported as spent");
+        Ok(())
+    }
+
+    #[test]
+    fn budget_reader_without_limit_reads_everything() -> io::Result<()> {
+        let mut reader = BudgetReader::new(&b"0123456789"[..], None);
+        let mut out = Vec::new();
+        reader.read_to_end(&mut out)?;
+
+        assert_eq!(out.len(), 10, "all bytes should be read");
+        assert!(!reader.limit_hit(), "no budget means no limit hit");
+        Ok(())
     }
 }

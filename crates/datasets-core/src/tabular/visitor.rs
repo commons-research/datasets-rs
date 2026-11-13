@@ -2,14 +2,14 @@ use std::io::{Cursor, Read};
 
 use csv::{ByteRecord, ReaderBuilder};
 
-
 use super::{
     super::{
         Classification, CoreError,
         inspection::{InspectionLimits, StopReason, Visit},
         labeler::Labeler,
         visitor::Visitor,
-    }, TabularDialect,
+    },
+    TabularDialect,
 };
 
 /// Number of bytes buffered from start for dialect detection.
@@ -22,7 +22,7 @@ impl TabularVisitor {
     /// Inspects tabular data using configured labelers and dialect.
     ///
     /// # Errors
-    /// - Returns [`CoreError`] when the tabular input cannot be parsed.
+    /// - Returns [`CoreError`] when the no record could be read.
     pub(crate) fn visit_with_dialect<R: Read>(
         reader: R,
         labelers: &[&dyn Labeler],
@@ -36,7 +36,11 @@ impl TabularVisitor {
             .from_reader(reader);
 
         let column_names: Vec<String> = if dialect.has_headers() {
-            csv_reader.byte_headers()?.iter().map(|name| String::from_utf8_lossy(name).trim().to_owned()).collect()
+            csv_reader
+                .byte_headers()?
+                .iter()
+                .map(|name| String::from_utf8_lossy(name).trim().to_owned())
+                .collect()
         } else {
             let column_count = csv_reader.byte_headers()?.len();
             (0..column_count).map(|index| format!("column_{index}")).collect()
@@ -53,13 +57,13 @@ impl TabularVisitor {
                 break;
             }
             match csv_reader.read_byte_record(&mut record) {
-                Ok(true) => {},
+                Ok(true) => {}
                 Ok(false) => break,
                 Err(error) if records > 0 => {
                     stop = StopReason::Error(error.to_string());
                     break;
                 }
-                Err(error) => return Err(error.into())
+                Err(error) => return Err(error.into()),
             }
             records += 1;
 
@@ -95,7 +99,7 @@ impl TabularVisitor {
             }
         }
 
-        Ok(Visit { classifications, records, stop})
+        Ok(Visit { classifications, records, stop })
     }
 }
 
@@ -104,7 +108,7 @@ impl Visitor for TabularVisitor {
     /// provided scientific labelers.
     ///
     /// # Errors
-    /// - Returns [`CoreError`] when the tabular input cannot be parsed.
+    /// - Returns [`CoreError`] when no record could be read.
     fn visit<R: Read>(
         mut reader: R,
         labelers: &[&dyn Labeler],
@@ -112,7 +116,7 @@ impl Visitor for TabularVisitor {
     ) -> Result<Visit, CoreError> {
         let mut sample = Vec::new();
         reader.by_ref().take(DIALECT_SAMPLE_BYTES).read_to_end(&mut sample)?;
-        let may_be_truncated= u64::try_from(sample.len()) == Ok(DIALECT_SAMPLE_BYTES);
+        let may_be_truncated = u64::try_from(sample.len()) == Ok(DIALECT_SAMPLE_BYTES);
         let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
 
         Self::visit_with_dialect(Cursor::new(sample).chain(reader), labelers, limits, dialect)
@@ -173,7 +177,11 @@ broken,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers, InspectionLimits::default())?;
+        let visit = <TabularVisitor as Visitor>::visit(
+            csv.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+        )?;
 
         let expected = vec![
             Classification::new(Smiles, "name", 3, 0),
@@ -197,7 +205,11 @@ sample_three,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&MolecularFormulaLabeler];
 
-        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers, InspectionLimits::default())?;
+        let visit = <TabularVisitor as Visitor>::visit(
+            csv.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+        )?;
 
         let expected = vec![
             Classification::new(MolecularFormula, "label", 3, 0),
@@ -229,7 +241,11 @@ beta,gamma
 
         let labelers: [&dyn Labeler; 2] = [&smiles_labeler, &formula_labeler];
 
-        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers, InspectionLimits::default())?;
+        let visit = <TabularVisitor as Visitor>::visit(
+            csv.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+        )?;
 
         let expected = vec![
             Classification::new(Smiles, "first", 2, 1),
@@ -260,8 +276,12 @@ water;O;H2O
 
         let labelers: [&dyn Labeler; 2] = [&SmilesLabeler, &MolecularFormulaLabeler];
 
-        let visit =
-            TabularVisitor::visit_with_dialect(data.as_bytes(), &labelers,  InspectionLimits::default(), dialect)?;
+        let visit = TabularVisitor::visit_with_dialect(
+            data.as_bytes(),
+            &labelers,
+            InspectionLimits::default(),
+            dialect,
+        )?;
 
         assert_eq!(visit.classifications.len(), 6);
 
@@ -288,39 +308,85 @@ water;O;H2O
         Ok(())
     }
 
-
-#[test]
-fn stops_inspection_at_record_limit() -> Result<(), CoreError> {
-    let csv = "\
+    #[test]
+    fn stops_inspection_at_record_limit() -> Result<(), CoreError> {
+        let csv = "\
 name,smiles
 ethanol,CCO
 water,O
 broken,C(
 ";
 
-    let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-    let limits = InspectionLimits {
-        max_records: Some(2),
-        ..InspectionLimits::default()
-    };
+        let limits = InspectionLimits { max_records: Some(2), ..InspectionLimits::default() };
 
-    let visit = TabularVisitor::visit(
-        csv.as_bytes(),
-        &labelers,
-        limits,
-    )?;
+        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, limits)?;
 
-    let expected = vec![
-        Classification::new(Smiles, "name", 2, 0),
-        Classification::new(Smiles, "smiles", 2, 2),
-    ];
+        let expected = vec![
+            Classification::new(Smiles, "name", 2, 0),
+            Classification::new(Smiles, "smiles", 2, 2),
+        ];
 
-    assert_eq!(visit.classifications, expected);
-    assert_eq!(visit.records, 2);
-    assert!(matches!(visit.stop, StopReason::RecordLimit));
+        assert_eq!(visit.classifications, expected);
+        assert_eq!(visit.records, 2);
+        assert!(matches!(visit.stop, StopReason::RecordLimit));
 
-    Ok(())
-}
+        Ok(())
+    }
+
+        #[test]
+    fn stops_at_record_limit() -> Result<(), CoreError> {
+        let csv = "name,smiles\na,CCO\nb,O\nc,CC\nd,N\n";
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+        let limits = InspectionLimits { max_records: Some(2), max_bytes: None };
+
+        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, limits)?;
+
+        assert_eq!(visit.records, 2, "only two records should be inspected");
+        assert_eq!(visit.stop, StopReason::RecordLimit, "the record limit should end the visit");
+        assert!(
+            visit.classifications.contains(&Classification::new(Smiles, "smiles", 2, 2)),
+            "evidence should cover only the inspected records"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn tolerates_ragged_rows_and_invalid_utf8() -> Result<(), CoreError> {
+        let csv = b"name,smiles\na,CCO,extra,cells\nb\n\xff\xfe,O\n";
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        let visit = TabularVisitor::visit(&csv[..], &labelers, InspectionLimits::UNLIMITED)?;
+
+        assert_eq!(visit.records, 3, "every row should be read");
+        assert_eq!(visit.stop, StopReason::EndOfInput, "ragged rows should not end the visit");
+        assert!(
+            visit.classifications.contains(&Classification::new(Smiles, "smiles", 2, 2)),
+            "valid cells in ragged rows should still be counted"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn inspects_single_column_file_with_header() -> Result<(), CoreError> {
+        let csv = "smiles\nCCO\nO\nCC\n";
+
+        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, InspectionLimits::UNLIMITED)?;
+
+        assert_eq!(
+            visit.classifications,
+            vec![Classification::new(Smiles, "smiles", 3, 3)],
+            "a single-column file should keep its header as the location"
+        );
+
+        Ok(())
+    }
 
 }
