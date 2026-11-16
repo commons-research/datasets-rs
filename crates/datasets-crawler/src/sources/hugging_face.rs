@@ -1,4 +1,4 @@
-use futures::{AsyncRead, StreamExt, TryStreamExt};
+use futures::{AsyncRead, StreamExt, TryStreamExt, future};
 use hf_hub::{
     HFClient,
     progress::{DownloadEvent, ProgressEvent, ProgressHandler},
@@ -43,9 +43,12 @@ impl DatasetSource for HuggingFaceSource {
 
         let stream = self.client.list_datasets().maybe_search(query).full(true).send()?;
 
+        // for future improvement - may want to count restricted repos.
+        let eligible = stream.try_filter(|dataset| future::ready(is_unrestricted(dataset)));
+
         let datasets: Vec<DatasetInfo> = match limit {
-            Some(limit) => stream.take(limit).try_collect().await?,
-            None => stream.try_collect().await?,
+            Some(limit) => eligible.take(limit).try_collect().await?,
+            None => eligible.try_collect().await?,
         };
 
         debug!(
@@ -130,6 +133,12 @@ impl DatasetSource for HuggingFaceSource {
     }
 }
 
+/// Returns whether chosen HF [`DatasetInfo`] is publicly accessible.
+fn is_unrestricted(dataset: &DatasetInfo) -> bool {
+    dataset.private != Some(true)
+        && dataset.gated.as_ref().is_none_or(|value| value.as_bool() == Some(false))
+}
+
 /// Converts Hugging Face metadata into source-independent dataset metadata
 fn dataset_summary(dataset: &DatasetInfo) -> DatasetSummary {
     let mut searchable_metadata = dataset.id.clone();
@@ -199,5 +208,42 @@ impl ProgressHandler for HuggingFaceProgressHandler {
                 self.progress.finish_with_message(format!("Download {}", self.artifact_path));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
+    use futures::{TryStreamExt, stream};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn filters_restricted_datasets_before_limit() -> Result<(), Box<dyn std::error::Error>> {
+        let fixtures = [
+            r#"{"id":"test/a","private":false,"gated":false}"#,
+            r#"{"id":"test/b","private":false,"gated":"auto"}"#,
+            r#"{"id":"test/c","private":false,"gated":"manual"}"#,
+            r#"{"id":"test/d","private":false,"gated":false}"#,
+            r#"{"id":"test/e","private":false,"gated":false}"#,
+        ];
+
+        let datasets: Vec<DatasetInfo> =
+            fixtures.iter().map(|json| serde_json::from_str(json)).collect::<Result<_, _>>()?;
+
+        let stream = stream::iter(datasets.into_iter().map(Ok::<_, std::convert::Infallible>));
+
+        let eligible: Vec<DatasetInfo> = stream
+            .try_filter(|dataset| futures::future::ready(is_unrestricted(dataset)))
+            .take(3)
+            .try_collect()
+            .await?;
+
+        let ids: Vec<&str> = eligible.iter().map(|dataset| dataset.id.as_str()).collect();
+
+        assert_eq!(ids, vec!["test/a", "test/d", "test/e"]);
+
+        Ok(())
     }
 }

@@ -22,6 +22,7 @@ indicatif.workspace = true
 zenodo-rs.workspace = true
 tempfile.workspace = true
 tokio-util.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

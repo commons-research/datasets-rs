@@ -603,6 +603,7 @@ dependencies = [
  "futures",
  "hf-hub",
  "indicatif",
+ "serde_json",
  "strum",
  "tempfile",
  "thiserror",
