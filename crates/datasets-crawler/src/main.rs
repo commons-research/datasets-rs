@@ -2,6 +2,8 @@
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
+use std::time::Duration;
+
 use datasets_core::ContentType;
 use datasets_crawler::{CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, crawl};
 
@@ -15,6 +17,9 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use self::cli::ResolvedArgs;
+
+/// Longest an artifact stream may stall before being abandoned.
+const STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs the dataset crawler.
 ///
@@ -60,6 +65,8 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         formats: args.formats,
         search_terms: args.search_terms,
         max_repositories: args.max_repositories,
+        limits: args.limits,
+        stall_timeout: STALL_TIMEOUT,
     };
 
     info!(
@@ -68,6 +75,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         formats = ?config.formats,
         search_terms = ?config.search_terms,
         max_repositories = config.max_repositories,
+        limits = ?config.limits,
         "starting crawl",
     );
 
@@ -101,6 +109,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
                 Err(error) => Err(error),
             }
         }
+        // update when zenodo implemented
         SourceArg::Zenodo => return Ok(()),
     };
 
@@ -141,11 +150,15 @@ fn print_results(crawler: &Crawler, content_types: &[ContentType]) {
             found = true;
 
             println!("- {} ({})", artifact.dataset_id(), artifact.dataset_url());
-            println!("  Artifact: {}", artifact.artifact_ref());
-
-            for classification in artifact.classifications().iter().filter(|classification| {
-                classification.content_type() == *content_type && classification.valid() > 0
-            }) {
+            let inspection = artifact.inspection();
+            println!(
+                " Artifact:{} ({} records, {} bytes read, stopped at: {:?})",
+                artifact.artifact_ref(),
+                inspection.records,
+                inspection.bytes,
+                inspection.stop
+            );
+            for classification in artifact.matches(*content_type) {
                 println!(
                     "  {}: {}/{} valid entries",
                     classification.location(),

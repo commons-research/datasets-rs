@@ -1,4 +1,6 @@
-use datasets_core::{ArtifactFormat, ContentType, classify_artifact};
+use std::io::Read;
+
+use datasets_core::{ArtifactFormat, ContentType, InspectionLimits, classify_artifact};
 
 use super::{CrawlerError, DatasetIndex, IndexedArtifact};
 
@@ -13,8 +15,6 @@ pub struct CandidateArtifact {
     artifact_ref: String,
     /// Structural format of the artifact
     format: ArtifactFormat,
-    /// Raw artifact data to classify
-    data: Vec<u8>,
 }
 
 impl CandidateArtifact {
@@ -25,14 +25,12 @@ impl CandidateArtifact {
         dataset_url: impl Into<String>,
         artifact_ref: impl Into<String>,
         format: ArtifactFormat,
-        data: Vec<u8>,
     ) -> Self {
         Self {
             dataset_id: dataset_id.into(),
             dataset_url: dataset_url.into(),
             artifact_ref: artifact_ref.into(),
             format,
-            data,
         }
     }
 }
@@ -42,6 +40,8 @@ impl CandidateArtifact {
 pub struct Crawler {
     /// Scientific content types sought
     content_types: Vec<ContentType>,
+    /// Bounds on how much of each artifact to inspect.
+    limits: InspectionLimits,
     /// In-memory index populated with classified artifacts
     index: DatasetIndex,
 }
@@ -49,7 +49,7 @@ pub struct Crawler {
 impl Crawler {
     /// Creates a crawler set to search for the specified content types
     #[must_use]
-    pub fn new(content_types: &[ContentType]) -> Self {
+    pub fn new(content_types: &[ContentType], limits: InspectionLimits) -> Self {
         let mut requested = Vec::new();
 
         for content_type in content_types {
@@ -57,25 +57,27 @@ impl Crawler {
                 requested.push(*content_type);
             }
         }
-        Self { content_types: requested, index: DatasetIndex::new() }
+        Self { content_types: requested, limits, index: DatasetIndex::new() }
     }
 
-    /// Does the classifying and indexing of a discovered artifact
+    /// Classifies an artifact as it is read and indexes the result.
     ///
     /// # Errors
     /// - Returns [`CrawlerError`] if the artifact cannot be classified
-    pub fn process(&mut self, artifact: CandidateArtifact) -> Result<(), CrawlerError> {
-        let classifications =
-            classify_artifact(artifact.data.as_slice(), artifact.format, &self.content_types)?;
+    pub fn process<R: Read>(
+        &mut self,
+        artifact: CandidateArtifact,
+        reader: R,
+    ) -> Result<&IndexedArtifact, CrawlerError> {
+        let inspection =
+            classify_artifact(reader, artifact.format, &self.content_types, self.limits)?;
 
-        self.index.insert(IndexedArtifact::new(
+        Ok(self.index.insert(IndexedArtifact::new(
             artifact.dataset_id,
             artifact.dataset_url,
             artifact.artifact_ref,
-            classifications,
-        ));
-
-        Ok(())
+            inspection,
+        )))
     }
 
     /// Returns the crawler's current in-memory index
@@ -105,12 +107,15 @@ broken,C(,garbage
             "https://example.org/datasets/example",
             "data.csv",
             ArtifactFormat::Tabular,
-            csv.as_bytes().to_vec(),
         );
 
-        let mut crawler = Crawler::new(&[ContentType::Smiles, ContentType::MolecularFormula]);
+        let mut crawler = Crawler::new(
+            &[ContentType::Smiles, ContentType::MolecularFormula],
+            InspectionLimits::UNLIMITED,
+        );
 
-        crawler.process(artifact)?;
+        let indexed = crawler.process(artifact, csv.as_bytes())?;
+        assert_eq!(indexed.inspection().records, 3, "all three rows should be inspected");
 
         let smiles_matches: Vec<_> = crawler.index().search(ContentType::Smiles).collect();
 
@@ -126,8 +131,7 @@ broken,C(,garbage
             "crawler should index the artifact as containing molecular formulae"
         );
 
-        assert_eq!(smiles_matches[0].dataset_id(), "example-dataset");
-
+        assert_eq!(smiles_matches[0].dataset_id(), "example-dataset", "wrong dataset indexed");
         Ok(())
     }
 }

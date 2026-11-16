@@ -10,6 +10,8 @@ mod error;
 mod index;
 /// Tracking for dataset download progress
 mod progress;
+/// Bridges asynchronous artifact streams to blocking readers.
+mod reader;
 /// Common interface for remote dataset sources.
 mod source;
 /// Implementations for external dataset sources.

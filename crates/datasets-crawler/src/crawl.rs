@@ -4,7 +4,10 @@ use datasets_core::{ArtifactFormat, ContentType, InspectionLimits};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use super::{CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary, FileFormat, SourceArtifact, reader::BlockingReader};
+use super::{
+    CandidateArtifact, Crawler, CrawlerError, DatasetSource, DatasetSummary, FileFormat,
+    SourceArtifact, reader::BlockingReader,
+};
 
 /// Configuration for a repository-independent crawl.
 #[derive(Debug, Clone)]
@@ -20,9 +23,10 @@ pub struct CrawlConfig {
     /// Maximum number of repositories to inspect, if not provided will crawl
     /// all available repositories.
     pub max_repositories: Option<usize>,
-    /// Bounds on how much of each artifact is read and inspected. 
+    /// Bounds on how much of each artifact is read and inspected.
     pub limits: InspectionLimits,
-    /// Longest an artifact stream may go without delivering bytes before abandoning.
+    /// Longest an artifact stream may go without delivering bytes before
+    /// abandoning.
     pub stall_timeout: Duration,
 }
 
@@ -310,38 +314,39 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                     error = %error,
                     "failed to open artifact; skipping artifact"
                 );
-                self.warnings.push(format!("Could not open {} from {}: {error}", artifact.path, dataset.id));
+                self.warnings
+                    .push(format!("Could not open {} from {}: {error}", artifact.path, dataset.id));
                 return InspectionOutcome::Completed;
             }
         };
-        
+
         let reader = BlockingReader::new(stream, cancellation, self.config.stall_timeout);
         let candidate = CandidateArtifact::new(
             dataset.id.clone(),
             dataset.url.clone(),
-            artifact.path.to_owned(),
+            artifact.path.clone(),
             format,
-            );
+        );
 
         let crawler = &mut self.crawler;
         let result = tokio::task::block_in_place(|| crawler.process(candidate, reader));
 
-                    match result {
+        match result {
             Ok(indexed) => {
                 stats.indexed_artifacts = 1;
                 let inspection = indexed.inspection();
                 info!(
-                    dataset_id = %dataset.id,
-                     artifact_path = %artifact.path,
-                    artifact_size_bytes = artifact.size_bytes,
-                    bytes_read = inspection.bytes,
-                    records = inspection.records,
-                    stop = ?inspection.stop,
-                     "artifact classified and indexed"
-                 );
-             }
+                   dataset_id = %dataset.id,
+                    artifact_path = %artifact.path,
+                   artifact_size_bytes = artifact.size_bytes,
+                   bytes_read = inspection.bytes,
+                   records = inspection.records,
+                   stop = ?inspection.stop,
+                    "artifact classified and indexed"
+                );
+            }
 
-             Err(_) if cancellation.is_cancelled() => {}
+            Err(_) if cancellation.is_cancelled() => {}
             Err(error) => {
                 stats.classification_failures += 1;
 
@@ -538,7 +543,6 @@ fn log_dataset_stats(dataset_id: &str, repository_artifact_count: usize, stats: 
         "finished inspecting dataset"
     );
 }
-
 
 #[cfg(test)]
 mod tests {

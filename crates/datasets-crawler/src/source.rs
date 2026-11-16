@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{fmt, path::Path, str::FromStr};
 
 use datasets_core::ArtifactFormat;
 use futures::AsyncRead;
@@ -42,6 +42,19 @@ impl FileFormat {
     #[must_use]
     pub fn all_formats() -> Vec<Self> {
         Self::VARIANTS.to_vec()
+    }
+
+    /// Returns the file format implied by a path's extension if supported.
+    #[must_use]
+    pub fn from_path(path: &str) -> Option<Self> {
+        let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+
+        match extension.as_str() {
+            "csv" | "tsv" => Some(Self::Csv),
+            "json" | "jsonl" | "ndjson" => Some(Self::Json),
+            "txt" | "smi" => Some(Self::PlainText),
+            _ => None,
+        }
     }
 }
 

@@ -45,7 +45,6 @@ pub struct Args {
     #[arg(long, env = "DATASETS_CRAWLER_MAX_REPOSITORIES")]
     max_repositories: Option<usize>,
 
-    
     /// Maximum number of records inspected per artifact.
     #[arg(long, env = "DATASETS_CRAWLER_MAX_RECORDS")]
     max_records: Option<usize>,
@@ -97,7 +96,10 @@ impl Args {
 
         let limits = InspectionLimits {
             max_records: self.max_records.or_else(|| self.default.then_some(10_000)),
-            max_bytes: self.max_artifact_mb.or_else(|| self.default.then_some(64)).map(|megabytes| megabytes.saturating_mul(1_000_000)),
+            max_bytes: self
+                .max_artifact_mb
+                .or_else(|| self.default.then_some(64))
+                .map(|megabytes| megabytes.saturating_mul(1_000_000)),
         };
         ResolvedArgs { source, content_types, formats, search_terms, max_repositories, limits }
     }

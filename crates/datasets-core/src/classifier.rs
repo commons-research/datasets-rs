@@ -25,7 +25,7 @@ pub struct Classifier {
     format: ArtifactFormat,
     /// All [`ContentType`] that should be sought and classified in the dataset.
     content_types: Vec<ContentType>,
-    /// BOunds on how much of the artifact is inspected.
+    /// Bounds on how much of the artifact is inspected.
     limits: InspectionLimits,
 }
 

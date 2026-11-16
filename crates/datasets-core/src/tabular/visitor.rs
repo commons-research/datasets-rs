@@ -335,7 +335,7 @@ broken,C(
         Ok(())
     }
 
-        #[test]
+    #[test]
     fn stops_at_record_limit() -> Result<(), CoreError> {
         let csv = "name,smiles\na,CCO\nb,O\nc,CC\nd,N\n";
 
@@ -388,5 +388,4 @@ broken,C(
 
         Ok(())
     }
-
 }

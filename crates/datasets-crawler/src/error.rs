@@ -28,6 +28,9 @@ pub enum CrawlerError {
     /// Tracing subscriber init failed
     #[error("failed to initialize logging: {0}")]
     Logging(String),
+    /// The selected source is not available in this build
+    #[error("source is not available yet: {0}")]
+    SourceUnavailable(&'static str),
     /// Parsing file format failed
     #[error("failed to parse file format: {0}")]
     ParseFileFormat(String),

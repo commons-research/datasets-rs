@@ -27,12 +27,6 @@ impl DownloadProgress {
         Self { progress_bar }
     }
 
-    /// Returns a shared handle to underlying progress bar
-    #[must_use]
-    pub(crate) fn progress_bar(&self) -> ProgressBar {
-        self.progress_bar.clone()
-    }
-
     /// Sets expected download size when available
     pub(crate) fn set_total_bytes(&self, total_bytes: u64) {
         if total_bytes == 0 {

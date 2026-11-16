@@ -1,6 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use datasets_core::{Classification, ContentType};
+use datasets_core::{Classification, ContentType, Inspection};
+
+/// Fewest valid values a location needs before it is counted as a match
+const MIN_VALID: usize = 2;
+
+/// Smallest share of inspected values that must be valid to be counted as a
+/// match.
+const MIN_VALID_RATIO: f64 = 0.5;
 
 /// An artifact and its scientific classification evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,8 +18,8 @@ pub struct IndexedArtifact {
     dataset_url: String,
     /// Reference identifying this artifact within the dataset
     artifact_ref: String,
-    /// Scientific classification evidence collected for this artifact
-    classifications: Vec<Classification>,
+    /// Evidence collected for this artifact and degree of inspection
+    inspection: Inspection,
 }
 
 impl IndexedArtifact {
@@ -22,13 +29,13 @@ impl IndexedArtifact {
         dataset_id: impl Into<String>,
         dataset_url: impl Into<String>,
         artifact_ref: impl Into<String>,
-        classifications: Vec<Classification>,
+        inspection: Inspection,
     ) -> Self {
         Self {
             dataset_id: dataset_id.into(),
             dataset_url: dataset_url.into(),
             artifact_ref: artifact_ref.into(),
-            classifications,
+            inspection,
         }
     }
 
@@ -50,10 +57,25 @@ impl IndexedArtifact {
         &self.artifact_ref
     }
 
-    /// Returns the classification evidence for this artifact
+    /// Returns the inspection result, including degree of inspection.
+    #[must_use]
+    pub const fn inspection(&self) -> &Inspection {
+        &self.inspection
+    }
+
+    /// Returns all classification evidence for this artifact
     #[must_use]
     pub fn classifications(&self) -> &[Classification] {
-        &self.classifications
+        &self.inspection.classifications
+    }
+
+    /// Returns the locations with supporting evidence of content type
+    pub fn matches(&self, content_type: ContentType) -> impl Iterator<Item = &Classification> + '_ {
+        self.classifications().iter().filter(move |classification| {
+            classification.content_type() == content_type
+                && classification.valid() >= MIN_VALID
+                && classification.valid_ratio().is_some_and(|ratio| ratio >= MIN_VALID_RATIO)
+        })
     }
 }
 
@@ -73,25 +95,21 @@ impl DatasetIndex {
         Self::default()
     }
 
-    /// Adds an artifact and indexes its successfully validated content types
-    pub fn insert(&mut self, artifact: IndexedArtifact) {
+    /// Adds an artifact and indexes the content types with supported evidence.
+    pub fn insert(&mut self, artifact: IndexedArtifact) -> &IndexedArtifact {
         let artifact_index = self.artifacts.len();
 
-        let content_types: HashSet<ContentType> = artifact
-            .classifications()
-            .iter()
-            .filter(|classification| classification.valid() > 0)
-            .map(Classification::content_type)
-            .collect();
-
-        for content_type in content_types {
-            self.by_content_type.entry(content_type).or_default().push(artifact_index);
+        for content_type in ContentType::all_types() {
+            if artifact.matches(content_type).next().is_some() {
+                self.by_content_type.entry(content_type).or_default().push(artifact_index);
+            }
         }
+
         self.artifacts.push(artifact);
+        &self.artifacts[artifact_index]
     }
 
-    /// Returns artifacts with at least one valid instance of the sought content
-    /// type
+    /// Returns artifacts with evidence supporting the sought content type.
     pub fn search(&self, content_type: ContentType) -> impl Iterator<Item = &IndexedArtifact> + '_ {
         self.by_content_type
             .get(&content_type)
@@ -110,7 +128,14 @@ impl DatasetIndex {
 mod tests {
     #![allow(clippy::missing_panics_doc)]
 
+    use datasets_core::StopReason;
+
     use super::*;
+
+    /// Builds a complete inspection holding the given evidence.
+    fn inspection(classifications: Vec<Classification>) -> Inspection {
+        Inspection { classifications, records: 3, bytes: 0, stop: StopReason::EndOfInput }
+    }
 
     #[test]
     fn indexes_artifacts_by_validated_content() {
@@ -120,29 +145,33 @@ mod tests {
             "example-dataset",
             "https://example.org/datasets/example",
             "data.csv",
-            vec![
+            inspection(vec![
                 Classification::new(ContentType::Smiles, "smiles", 3, 2),
                 Classification::new(ContentType::MolecularFormula, "formula", 3, 2),
-            ],
+            ]),
         ));
 
         index.insert(IndexedArtifact::new(
             "invalid-dataset",
             "https://example.org/datasets/invalid",
             "data.csv",
-            vec![
+            inspection(vec![
                 Classification::new(ContentType::Smiles, "smiles", 3, 0),
                 Classification::new(ContentType::MolecularFormula, "formula", 3, 0),
-            ],
+            ]),
         ));
 
         let smiles_matches: Vec<_> = index.search(ContentType::Smiles).collect();
 
-        assert_eq!(smiles_matches.len(), 1);
-        assert_eq!(index.search(ContentType::MolecularFormula).count(), 1);
+        assert_eq!(smiles_matches.len(), 1, "only the valid dataset should match");
+        assert_eq!(
+            index.search(ContentType::MolecularFormula).count(),
+            1,
+            "only the valid dataset should match"
+        );
 
-        assert_eq!(smiles_matches[0].dataset_id(), "example-dataset");
-        assert_eq!(smiles_matches[0].artifact_ref(), "data.csv");
+        assert_eq!(smiles_matches[0].dataset_id(), "example-dataset", "wrong dataset matched");
+        assert_eq!(smiles_matches[0].artifact_ref(), "data.csv", "wrong artifact matched");
 
         assert_eq!(
             smiles_matches[0].classifications().len(),
@@ -158,9 +187,27 @@ mod tests {
     }
 
     #[test]
+    fn ignores_locations_with_only_incidental_matches() {
+        let mut index = DatasetIndex::new();
+
+        index.insert(IndexedArtifact::new(
+            "text-dataset",
+            "https://example.org/datasets/text",
+            "data.csv",
+            inspection(vec![Classification::new(ContentType::Smiles, "comment", 1000, 7)]),
+        ));
+
+        assert_eq!(
+            index.search(ContentType::Smiles).count(),
+            0,
+            "a few accidental parses in a text column should not be a match"
+        );
+    }
+
+    #[test]
     fn returns_no_matches_for_unindexed_content() {
         let index = DatasetIndex::new();
 
-        assert_eq!(index.search(ContentType::Smiles).count(), 0);
+        assert_eq!(index.search(ContentType::Smiles).count(), 0, "empty index has no matches");
     }
 }
