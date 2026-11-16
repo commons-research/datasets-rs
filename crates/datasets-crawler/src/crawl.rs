@@ -333,7 +333,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
         match result {
             Ok(indexed) => {
-                stats.indexed_artifacts = 1;
+                stats.indexed_artifacts += 1;
                 let inspection = indexed.inspection();
                 info!(
                    dataset_id = %dataset.id,

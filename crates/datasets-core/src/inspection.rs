@@ -102,7 +102,7 @@ impl<R: Read> Read for BudgetReader<R> {
             None => buf.len(),
         };
         let read = self.inner.read(&mut buf[..allowed])?;
-        self.bytes_read += u64::try_from(read).unwrap_or(u64::MAX);
+        self.bytes_read = u64::try_from(read).unwrap_or(u64::MAX);
         Ok(read)
     }
 }
