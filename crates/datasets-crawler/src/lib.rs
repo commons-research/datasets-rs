@@ -4,6 +4,8 @@
 mod crawl;
 /// Crawler implementation for classifying discovered artifacts.
 mod crawler;
+/// Handles the indexing database control
+mod database;
 /// Crawler error definitions
 mod error;
 /// Indexes classified artifact records.

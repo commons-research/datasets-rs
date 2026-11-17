@@ -92,16 +92,18 @@ impl Args {
         let search_terms =
             if self.search_terms.is_empty() { None } else { Some(self.search_terms) };
 
-        let max_repositories = self.max_repositories.or_else(|| self.default.then_some(50));
-
         let limits = InspectionLimits {
-            max_records: self.max_records.or_else(|| self.default.then_some(10_000)),
-            max_bytes: self
-                .max_artifact_mb
-                .or_else(|| self.default.then_some(64))
-                .map(|megabytes| megabytes.saturating_mul(1_000_000)),
+            max_records: self.max_records,
+            max_bytes: self.max_artifact_mb.map(|mb| mb.saturating_mul(1_000_000)),
         };
-        ResolvedArgs { source, content_types, formats, search_terms, max_repositories, limits }
+        ResolvedArgs {
+            source,
+            content_types,
+            formats,
+            search_terms,
+            max_repositories: self.max_repositories,
+            limits,
+        }
     }
 }
 
