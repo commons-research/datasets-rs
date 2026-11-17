@@ -23,7 +23,7 @@ zenodo-rs.workspace = true
 tempfile.workspace = true
 tokio-util.workspace = true
 serde_json.workspace = true
-rusqlite = { version = "0.43.0", features = ["bundled"] }
+rusqlite.workspace = true
 
 [lints]
 workspace = true
