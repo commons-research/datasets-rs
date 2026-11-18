@@ -31,4 +31,7 @@ pub enum CrawlerError {
     /// Parsing file format failed
     #[error("failed to parse file format: {0}")]
     ParseFileFormat(String),
+    /// Error operating sqlite database
+    #[error("database operation failed: {0}")]
+    Database(#[from] rusqlite::Error),
 }

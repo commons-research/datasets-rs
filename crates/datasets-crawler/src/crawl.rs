@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use datasets_core::{ArtifactFormat, Classification, ContentType, classify_artifact};
-use futures::TryStreamExt;
+use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
 
 use crate::{
     CrawlerError,
@@ -93,7 +92,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
         // No search terms. Discovery is unrestricted.
         let mut repositories = self.source.discover_datasets()?;
-
+        pin_mut!(repositories);
         while let Some(repository) = tokio::select! {
             biased;
 
@@ -106,11 +105,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             if self.database.repository_is_crawled(&repository)? {
                 continue;
             }
-
-            info!(
-                repository_id = %repository.id,
-                "inspecting discovered repository"
-            );
 
             let Some(result) = self.inspect_repository(&repository).await? else {
                 return Ok(CrawlStatus::Interrupted);
@@ -138,10 +132,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             biased;
 
             () = self.cancellation.cancelled() => {
-                info!(
-                    repository_id = %repository.id,
-                    "interrupted while listing repository artifacts"
-                );
                 return Ok(None);
             }
 
@@ -149,12 +139,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 match result {
                     Ok(artifacts) => artifacts,
                     Err(error) => {
-                        warn!(
-                            repository_id = %repository.id,
-                            error = %error,
-                            "failed to list repository artifacts"
-                        );
-
                         return Ok(Some(RepositoryResult {
                             repository: repository.clone(),
                             artifacts: Vec::new(),
@@ -207,11 +191,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             biased;
 
             () = self.cancellation.cancelled() => {
-                info!(
-                    repository_id = %repository.id,
-                    artifact_path = %artifact.path,
-                    "interrupted while opening artifact"
-                );
                 return Ok(None);
             }
 
@@ -219,12 +198,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 match result {
                     Ok(stream) => stream,
                     Err(error) => {
-                        warn!(
-                            repository_id = %repository.id,
-                            artifact_path = %artifact.path,
-                            error = %error,
-                            "failed to open artifact"
-                        );
 
                         return Ok(Some(ArtifactResult {
                             path: artifact.path.clone(),
@@ -255,13 +228,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
         match result {
             Ok(visit) => {
-                info!(
-                    repository_id = %repository.id,
-                    artifact_path = %artifact.path,
-                    records = visit.records,
-                    "artifact classified"
-                );
-
                 Ok(Some(ArtifactResult {
                     path: artifact.path.clone(),
                     format,
@@ -272,7 +238,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 }))
             }
 
-            Err(error) if self.cancellation.is_cancelled() => Ok(None),
+            Err(_) if self.cancellation.is_cancelled() => Ok(None),
 
             Err(error) => {
                 Ok(Some(ArtifactResult {

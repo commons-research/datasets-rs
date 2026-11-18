@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use datasets_core::ContentType;
-use datasets_crawler::{CrawlConfig, CrawlStatus, Crawler, CrawlerError, HuggingFaceSource, crawl};
+use datasets_crawler::{CrawlConfig, CrawlStatus, CrawlerError, HuggingFaceSource, crawl};
 
 /// Command-line configuration.
 mod cli;
@@ -27,30 +27,12 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// - Returns an error if initialization or dataset discovery fails.
 fn main() -> Result<(), CrawlerError> {
     let args = Args::parse_args();
-    init_logging()?;
     info!("Initializing asynchronous runtime");
 
     let runtime =
         Builder::new_multi_thread().enable_all().build().map_err(CrawlerError::Runtime)?;
 
     runtime.block_on(run(args))
-}
-
-/// Initializes tracing on stderr, honors `RUST_LOG`
-///
-/// # Errors
-/// - Returns [`CrawlerError::Logging`] if subscriber fails
-fn init_logging() -> Result<(), CrawlerError> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("datasets_crawler=info,hf_hub=warn"));
-
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .try_init()
-        .map_err(|error| CrawlerError::Logging(error.to_string()))?;
-
-    Ok(())
 }
 
 /// Executes crawler async
@@ -63,7 +45,6 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
     let config = CrawlConfig {
         content_types: args.content_types,
         formats: args.formats,
-        search_terms: args.search_terms,
         max_repositories: args.max_repositories,
         stall_timeout: STALL_TIMEOUT,
     };
