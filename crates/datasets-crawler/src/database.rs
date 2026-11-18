@@ -14,12 +14,20 @@ pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
         "
         PRAGMA foreign_keys = ON;
 
+        CREATE TABLE IF NOT EXISTS crawl_run (
+            id                  INTEGER PRIMARY KEY,
+            started_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at         TEXT,
+            datasets_crawled    INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS repository (
             id          INTEGER PRIMARY KEY,
-            source      TEXT NOT NULL,
-            source_id   TEXT NOT NULL,
+            provider      TEXT NOT NULL,
+            external_id   TEXT NOT NULL,
             url         TEXT NOT NULL,
-            UNIQUE (source, source_id)
+            last_crawled_at TEXT
+            UNIQUE (provider, external_id)
         );
 
         CREATE TABLE IF NOT EXISTS artifact (
@@ -28,7 +36,6 @@ pub fn open_database(path: impl AsRef<Path>) -> Result<Connection> {
             path                TEXT NOT NULL,
             format              TEXT NOT NULL,
             size_bytes          INTEGER NOT NULL,
-            last_crawled_at     TEXT,
             records_inspected   INTEGER,
             UNIQUE (repository_id, path)
         );

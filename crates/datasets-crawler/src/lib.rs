@@ -2,8 +2,6 @@
 
 /// Shared discovery and crawling workflow.
 mod crawl;
-/// Crawler implementation for classifying discovered artifacts.
-mod crawler;
 /// Handles the indexing database control
 mod database;
 /// Crawler error definitions
@@ -19,10 +17,9 @@ mod source;
 /// Implementations for external dataset sources.
 mod sources;
 
-pub use crawl::{CrawlConfig, CrawlReport, CrawlStatus, crawl};
-pub use crawler::{CandidateArtifact, Crawler};
+pub use crawl::{CrawlConfig, CrawlStatus, crawl};
 pub use error::CrawlerError;
 pub use index::{DatasetIndex, IndexedArtifact};
-pub use source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact};
+pub use source::{DatasetSource, FileFormat, RepositorySummary, SourceArtifact};
 // pub use sources::{HuggingFaceSource, ZenodoSource};
 pub use sources::HuggingFaceSource;

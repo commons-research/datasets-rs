@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use datasets_core::{ContentType, InspectionLimits};
+use datasets_core::ContentType;
 use datasets_crawler::FileFormat;
 
 /// CLI configuration for the dataset crawler.
@@ -32,26 +32,9 @@ pub struct Args {
     #[arg(long, value_delimiter = ',', env = "DATASETS_CRAWLER_FORMATS")]
     formats: Vec<FileFormat>,
 
-    /// Optional metadata search terms for dataset discovery.
-    #[arg(
-        long = "search-term",
-        action = clap::ArgAction::Append,
-        value_delimiter = ',',
-        env = "DATASETS_CRAWLER_SEARCH_TERMS"
-    )]
-    search_terms: Vec<String>,
-
     /// Maximum number of unique repositories to inspect.
     #[arg(long, env = "DATASETS_CRAWLER_MAX_REPOSITORIES")]
     max_repositories: Option<usize>,
-
-    /// Maximum number of records inspected per artifact.
-    #[arg(long, env = "DATASETS_CRAWLER_MAX_RECORDS")]
-    max_records: Option<usize>,
-
-    /// Maximum decimal megabytes read per artifact.
-    #[arg(long, env = "DATASETS_CRAWLER_MAX_ARTIFACT_MB")]
-    max_artifact_mb: Option<u64>,
 }
 
 /// Fully resolved CLI configuration.
@@ -62,12 +45,8 @@ pub struct ResolvedArgs {
     pub content_types: Vec<ContentType>,
     /// Optional file-format restrictions.
     pub formats: Option<Vec<FileFormat>>,
-    /// Optional search terms for dataset discovery.
-    pub search_terms: Option<Vec<String>>,
     /// Maximum number of repositories to inspect.
     pub max_repositories: Option<usize>,
-    /// Bounds on how much of each artifact is inspected.
-    pub limits: InspectionLimits,
 }
 
 impl Args {
@@ -89,21 +68,7 @@ impl Args {
 
         let formats = if self.formats.is_empty() { None } else { Some(self.formats) };
 
-        let search_terms =
-            if self.search_terms.is_empty() { None } else { Some(self.search_terms) };
-
-        let limits = InspectionLimits {
-            max_records: self.max_records,
-            max_bytes: self.max_artifact_mb.map(|mb| mb.saturating_mul(1_000_000)),
-        };
-        ResolvedArgs {
-            source,
-            content_types,
-            formats,
-            search_terms,
-            max_repositories: self.max_repositories,
-            limits,
-        }
+        ResolvedArgs { source, content_types, formats, max_repositories: self.max_repositories }
     }
 }
 

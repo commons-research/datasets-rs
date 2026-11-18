@@ -1,7 +1,7 @@
 use std::{fmt, path::Path, str::FromStr};
 
 use datasets_core::ArtifactFormat;
-use futures::AsyncRead;
+use futures::{AsyncRead, Stream};
 use strum::VariantArray;
 
 use super::error::CrawlerError;
@@ -77,9 +77,9 @@ impl FromStr for FileFormat {
     }
 }
 
-/// Metadata describing dataset discovered in public repo
+/// Metadata describing repository discovered.
 #[derive(Debug, Clone)]
-pub struct DatasetSummary {
+pub struct RepositorySummary {
     /// Stable identifier assigned by source
     pub id: String,
     /// URL of the dataset location
@@ -111,8 +111,7 @@ pub trait DatasetSource: Send + Sync {
     fn discover_datasets<'a>(
         &'a self,
         query: Option<&'a str>,
-        limit: Option<usize>,
-    ) -> impl Future<Output = Result<Vec<DatasetSummary>, CrawlerError>> + Send + 'a;
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a, CrawlerError>;
 
     /// Lists the artifacts available within a dataset.
     ///
