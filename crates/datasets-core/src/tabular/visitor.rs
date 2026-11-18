@@ -11,8 +11,8 @@ use super::{
     TabularDialect,
 };
 
-/// Number of bytes buffered from start for dialect detection.
-const DIALECT_SAMPLE_BYTES: u64 = 64 * 1024;
+/// Number of bytes buffered from start for dialect detection and first pass evaluation.
+const FIRST_PASS_BYTES: u64 = 64 * 1024;
 
 /// Visits tabular dataset content
 pub struct TabularVisitor;
@@ -108,8 +108,8 @@ impl Visitor for TabularVisitor {
         labelers: &[&dyn Labeler],
     ) -> Result<Visit, CoreError> {
         let mut sample = Vec::new();
-        reader.by_ref().take(DIALECT_SAMPLE_BYTES).read_to_end(&mut sample)?;
-        let may_be_truncated = u64::try_from(sample.len()) == Ok(DIALECT_SAMPLE_BYTES);
+        reader.by_ref().take(FIRST_PASS_BYTES).read_to_end(&mut sample)?;
+        let may_be_truncated = u64::try_from(sample.len()) == Ok(FIRST_PASS_BYTES);
         let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
 
         Self::visit_with_dialect(Cursor::new(sample).chain(reader), labelers, dialect)

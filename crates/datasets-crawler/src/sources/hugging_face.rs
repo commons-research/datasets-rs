@@ -1,17 +1,15 @@
-use futures::{AsyncRead, StreamExt, TryStreamExt, future};
+use futures::{AsyncRead, Stream, StreamExt, TryStreamExt, future};
 use hf_hub::{
     HFClient,
     progress::{DownloadEvent, ProgressEvent, ProgressHandler},
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
-use tracing::debug;
-
 use super::super::{
+    progress::DownloadProgress,
     error::CrawlerError,
-    source::{DatasetSource, DatasetSummary, SourceArtifact},
+    source::{DatasetSource, RepositorySummary, SourceArtifact},
 };
-use crate::progress::DownloadProgress;
 
 /// Structure for discovering datasets hosted on Hugging Face
 pub struct HuggingFaceSource {
@@ -30,46 +28,48 @@ impl HuggingFaceSource {
 }
 
 impl DatasetSource for HuggingFaceSource {
-    async fn discover_datasets(
-        &self
-    ) -> Result<Vec<DatasetSummary>, CrawlerError> {
-
+    fn discover_datasets<'a>(
+        &'a self,
+    ) -> Result<
+        impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a,
+        CrawlerError,
+    > {
         let stream = self.client.list_datasets().full(true).send()?;
 
-        // for future improvement - may want to count restricted repos.
-        let eligible = stream.try_filter(|dataset| future::ready(is_unrestricted(dataset)));
+        let stream = stream
+            .try_filter(|dataset| future::ready(is_eligible(dataset)))
+            .map_ok(dataset_summary)
+            .map_err(CrawlerError::from);
 
-        let datasets = eligible.try_collect().await?;
-
-        
-
-        Ok(datasets.iter().map(dataset_summary).collect())
+        Ok(stream)
     }
 
-    async fn list_artifacts(&self, dataset_id: &str) -> Result<Vec<SourceArtifact>, CrawlerError> {
+    async fn list_artifacts(
+        &self,
+        dataset_id: &str,
+    ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
 
-        let entries: Vec<RepoTreeEntry> = self
+        let entries = self
             .client
             .dataset(owner, name)
             .list_tree()
             .recursive(true)
             .expand(true)
-            .send()?
-            .try_collect()
-            .await?;
+            .send()?;
 
-        Ok(entries
-            .into_iter()
-            .filter_map(|entry| {
-                match entry {
+        entries
+            .try_filter_map(|entry| {
+                future::ready(Ok(match entry {
                     RepoTreeEntry::File { path, size, .. } => {
                         Some(SourceArtifact { path, size_bytes: size })
                     }
                     RepoTreeEntry::Directory { .. } => None,
-                }
+                }))
             })
-            .collect())
+            .try_collect()
+            .await
+            .map_err(Into::into)
     }
 
     async fn open_artifact<'a>(
@@ -78,11 +78,6 @@ impl DatasetSource for HuggingFaceSource {
         artifact: &'a SourceArtifact,
     ) -> Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
-        debug!(
-            dataset_id = %dataset_id,
-            artifact_path = %artifact.path,
-            "opening Hugging Face artifact stream"
-        );
         let progress_message = format!("{dataset_id}/{}", artifact.path);
         let progress = DownloadProgress::new(artifact.size_bytes, progress_message);
 
@@ -91,21 +86,28 @@ impl DatasetSource for HuggingFaceSource {
             .dataset(owner, name)
             .download_file_stream()
             .filename(artifact.path.clone())
-            .progress(HuggingFaceProgressHandler::new(progress.clone(), artifact.path.clone()))
+            .progress(HuggingFaceProgressHandler::new(
+                progress.clone(),
+                artifact.path.clone(),
+            ))
             .send()
             .await;
 
         let (_, stream) = match download_result {
             Ok(result) => result,
             Err(error) => {
-                progress
-                    .abandon_with_message(format!("Failed to open {dataset_id}/{}", artifact.path));
+                progress.abandon_with_message(format!(
+                    "Failed to open {dataset_id}/{}",
+                    artifact.path
+                ));
                 return Err(error.into());
             }
         };
+
         let failed_progress = progress.clone();
         let failed_dataset_id = dataset_id.to_owned();
         let failed_artifact_path = artifact.path.clone();
+
         let reader = stream
             .map_err(move |error| {
                 failed_progress.abandon_with_message(format!(
@@ -120,13 +122,13 @@ impl DatasetSource for HuggingFaceSource {
 }
 
 /// Returns whether chosen HF [`DatasetInfo`] is publicly accessible.
-fn is_unrestricted(dataset: &DatasetInfo) -> bool {
+fn is_eligible(dataset: &DatasetInfo) -> bool {
     dataset.private != Some(true)
         && dataset.gated.as_ref().is_none_or(|value| value.as_bool() == Some(false))
 }
 
 /// Converts Hugging Face metadata into source-independent dataset metadata
-fn dataset_summary(dataset: &DatasetInfo) -> DatasetSummary {
+fn dataset_summary(dataset: &DatasetInfo) -> RepositorySummary {
     let mut searchable_metadata = dataset.id.clone();
 
     if let Some(description) = &dataset.description {
@@ -144,7 +146,7 @@ fn dataset_summary(dataset: &DatasetInfo) -> DatasetSummary {
         searchable_metadata.push_str(&card_data.to_string());
     }
 
-    DatasetSummary {
+    RepositorySummary {
         id: dataset.id.clone(),
         url: format!("https://huggingface.co/datasets/{}", dataset.id),
         searchable_metadata,
