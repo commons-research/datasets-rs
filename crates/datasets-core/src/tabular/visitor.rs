@@ -6,12 +6,13 @@ use super::{
     super::{
         Classification, CoreError,
         labeler::Labeler,
-        visitor::{Visitor, Visit, StopReason},
+        visitor::{StopReason, Visit, Visitor},
     },
     TabularDialect,
 };
 
-/// Number of bytes buffered from start for dialect detection and first pass evaluation.
+/// Number of bytes buffered from start for dialect detection and first pass
+/// evaluation.
 const FIRST_PASS_BYTES: u64 = 64 * 1024;
 
 /// Visits tabular dataset content
@@ -103,10 +104,7 @@ impl Visitor for TabularVisitor {
     ///
     /// # Errors
     /// - Returns [`CoreError`] when no record could be read.
-    fn visit<R: Read>(
-        mut reader: R,
-        labelers: &[&dyn Labeler],
-    ) -> Result<Visit, CoreError> {
+    fn visit<R: Read>(mut reader: R, labelers: &[&dyn Labeler]) -> Result<Visit, CoreError> {
         let mut sample = Vec::new();
         reader.by_ref().take(FIRST_PASS_BYTES).read_to_end(&mut sample)?;
         let may_be_truncated = u64::try_from(sample.len()) == Ok(FIRST_PASS_BYTES);
@@ -170,10 +168,7 @@ broken,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = <TabularVisitor as Visitor>::visit(
-            csv.as_bytes(),
-            &labelers,
-        )?;
+        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(Smiles, "name", 3, 0),
@@ -197,10 +192,7 @@ sample_three,garbage,C(
 
         let labelers: [&dyn Labeler; 1] = [&MolecularFormulaLabeler];
 
-        let visit = <TabularVisitor as Visitor>::visit(
-            csv.as_bytes(),
-            &labelers,
-        )?;
+        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(MolecularFormula, "label", 3, 0),
@@ -232,10 +224,7 @@ beta,gamma
 
         let labelers: [&dyn Labeler; 2] = [&smiles_labeler, &formula_labeler];
 
-        let visit = <TabularVisitor as Visitor>::visit(
-            csv.as_bytes(),
-            &labelers,
-        )?;
+        let visit = <TabularVisitor as Visitor>::visit(csv.as_bytes(), &labelers)?;
 
         let expected = vec![
             Classification::new(Smiles, "first", 2, 1),
@@ -266,11 +255,7 @@ water;O;H2O
 
         let labelers: [&dyn Labeler; 2] = [&SmilesLabeler, &MolecularFormulaLabeler];
 
-        let visit = TabularVisitor::visit_with_dialect(
-            data.as_bytes(),
-            &labelers,
-            dialect,
-        )?;
+        let visit = TabularVisitor::visit_with_dialect(data.as_bytes(), &labelers, dialect)?;
 
         assert_eq!(visit.classifications.len(), 6);
 
@@ -321,7 +306,7 @@ water;O;H2O
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, )?;
+        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers)?;
 
         assert_eq!(
             visit.classifications,

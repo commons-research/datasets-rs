@@ -4,9 +4,8 @@ use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess};
 
 use super::{
     Classification, CoreError,
-    visitor::{Visit, StopReason},
     labeler::Labeler,
-    visitor::Visitor,
+    visitor::{StopReason, Visit, Visitor},
 };
 
 /// Visits JSON dataset content.
@@ -19,22 +18,14 @@ impl Visitor for JsonVisitor {
     /// # Errors
     ///  - Returns [`CoreError`] if the input fails before any evidence is
     ///    collected.
-    fn visit<R: Read>(
-        reader: R,
-        labelers: &[&dyn Labeler],
-    ) -> Result<Visit, CoreError> {
-        let mut state = WalkState {
-            labelers,
-            evidence: BTreeMap::new(),
-            path: String::from("$"),
-            records: 0,
-        };
+    fn visit<R: Read>(reader: R, labelers: &[&dyn Labeler]) -> Result<Visit, CoreError> {
+        let mut state =
+            WalkState { labelers, evidence: BTreeMap::new(), path: String::from("$"), records: 0 };
 
         let mut deserializer = serde_json::Deserializer::from_reader(reader);
         let mut stop = StopReason::EndOfInput;
 
         while deserializer.end().is_err() {
-
             let records_before = state.records;
             let walker = Walker { state: &mut state, depth: 0 };
 
@@ -296,7 +287,7 @@ mod tests {
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, )?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers)?;
 
         let expected = vec![Classification::new(Smiles, "$[].smiles", 2, 2)];
 
@@ -317,7 +308,7 @@ mod tests {
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = JsonVisitor::visit(json.as_bytes(), &labelers,)?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers)?;
 
         let expected = vec![Classification::new(Smiles, "$[].smiles", 1, 1)];
 
@@ -334,7 +325,7 @@ mod tests {
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = JsonVisitor::visit(jsonl.as_bytes(), &labelers,)?;
+        let visit = JsonVisitor::visit(jsonl.as_bytes(), &labelers)?;
 
         assert_eq!(
             visit.classifications,
@@ -346,15 +337,13 @@ mod tests {
         Ok(())
     }
 
-
-
     #[test]
     fn keeps_evidence_when_json_is_cut_short() -> Result<(), CoreError> {
         let json = r#"[{"smiles": "CCO"}, {"smiles": "O"}, {"smi"#;
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = JsonVisitor::visit(json.as_bytes(), &labelers, )?;
+        let visit = JsonVisitor::visit(json.as_bytes(), &labelers)?;
 
         assert_eq!(
             visit.classifications,

@@ -1,13 +1,14 @@
-use futures::{AsyncRead, Stream, StreamExt, TryStreamExt, future};
+use futures::{AsyncRead, Stream, TryStreamExt, future};
 use hf_hub::{
     HFClient,
     progress::{DownloadEvent, ProgressEvent, ProgressHandler},
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
+
 use super::super::{
-    progress::DownloadProgress,
     error::CrawlerError,
+    progress::DownloadProgress,
     source::{DatasetSource, RepositorySummary, SourceArtifact},
 };
 
@@ -30,33 +31,23 @@ impl HuggingFaceSource {
 impl DatasetSource for HuggingFaceSource {
     fn discover_datasets<'a>(
         &'a self,
-    ) -> Result<
-        impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a,
-        CrawlerError,
-    > {
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a, CrawlerError>
+    {
         let stream = self.client.list_datasets().full(true).send()?;
 
         let stream = stream
             .try_filter(|dataset| future::ready(is_eligible(dataset)))
-            .map_ok(dataset_summary)
+            .map_ok(|dataset| dataset_summary(&dataset))
             .map_err(CrawlerError::from);
 
         Ok(stream)
     }
 
-    async fn list_artifacts(
-        &self,
-        dataset_id: &str,
-    ) -> Result<Vec<SourceArtifact>, CrawlerError> {
+    async fn list_artifacts(&self, dataset_id: &str) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let (owner, name) = split_id(dataset_id);
+        let dataset = self.client.dataset(owner, name);
 
-        let entries = self
-            .client
-            .dataset(owner, name)
-            .list_tree()
-            .recursive(true)
-            .expand(true)
-            .send()?;
+        let entries = dataset.list_tree().recursive(true).expand(true).send()?;
 
         entries
             .try_filter_map(|entry| {
@@ -86,20 +77,15 @@ impl DatasetSource for HuggingFaceSource {
             .dataset(owner, name)
             .download_file_stream()
             .filename(artifact.path.clone())
-            .progress(HuggingFaceProgressHandler::new(
-                progress.clone(),
-                artifact.path.clone(),
-            ))
+            .progress(HuggingFaceProgressHandler::new(progress.clone(), artifact.path.clone()))
             .send()
             .await;
 
         let (_, stream) = match download_result {
             Ok(result) => result,
             Err(error) => {
-                progress.abandon_with_message(format!(
-                    "Failed to open {dataset_id}/{}",
-                    artifact.path
-                ));
+                progress
+                    .abandon_with_message(format!("Failed to open {dataset_id}/{}", artifact.path));
                 return Err(error.into());
             }
         };
@@ -203,7 +189,7 @@ impl ProgressHandler for HuggingFaceProgressHandler {
 mod tests {
     #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
-    use futures::{TryStreamExt, stream};
+    use futures::{StreamExt, TryStreamExt, stream};
 
     use super::*;
 
@@ -223,7 +209,7 @@ mod tests {
         let stream = stream::iter(datasets.into_iter().map(Ok::<_, std::convert::Infallible>));
 
         let eligible: Vec<DatasetInfo> = stream
-            .try_filter(|dataset| futures::future::ready(is_unrestricted(dataset)))
+            .try_filter(|dataset| futures::future::ready(is_eligible(dataset)))
             .take(3)
             .try_collect()
             .await?;

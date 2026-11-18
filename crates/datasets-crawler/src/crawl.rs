@@ -1,14 +1,14 @@
 use std::time::Duration;
 
-use datasets_core::{classify_artifact, ArtifactFormat, Classification, ContentType};
+use datasets_core::{ArtifactFormat, Classification, ContentType, classify_artifact};
 use futures::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::{
+    CrawlerError,
     database::Database,
     source::{DatasetSource, FileFormat, RepositorySummary, SourceArtifact},
-    CrawlerError,
 };
 
 /// Configuration for a repository-independent crawl.
@@ -70,7 +70,7 @@ enum InspectionOutcome {
 }
 
 impl<S: DatasetSource> CrawlSession<'_, S> {
-        /// Runs the crawl over the repositories found from source.
+    /// Runs the crawl over the repositories found from source.
     ///
     /// # Errors
     /// - Returns [`CrawlerError`] if search fails
@@ -88,7 +88,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     ///
     /// # Errors:
     /// - Returns [`CrawlerError`] when failing to interact with repository.
-async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, CrawlerError> {
+    async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, CrawlerError> {
         let mut repositories_crawled = 0usize;
 
         // No search terms. Discovery is unrestricted.
@@ -121,11 +121,7 @@ async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, Crawler
 
             repositories_crawled += 1;
 
-            if self
-                .config
-                .max_repositories
-                .is_some_and(|limit| repositories_crawled >= limit)
-            {
+            if self.config.max_repositories.is_some_and(|limit| repositories_crawled >= limit) {
                 break;
             }
         }
@@ -247,8 +243,11 @@ async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, Crawler
             }
         };
 
-        let reader =
-            super::reader::BlockingReader::new(stream, self.cancellation, self.config.stall_timeout);
+        let reader = super::reader::BlockingReader::new(
+            stream,
+            self.cancellation,
+            self.config.stall_timeout,
+        );
 
         let result = tokio::task::block_in_place(|| {
             classify_artifact(reader, format, &self.config.content_types)
@@ -294,24 +293,15 @@ async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, Crawler
 }
 
 /// Selects an artifact format if the file is supported and permitted.
-fn select_artifact_format(
-    artifact_path: &str,
-    config: &CrawlConfig,
-) -> Option<ArtifactFormat> {
+fn select_artifact_format(artifact_path: &str, config: &CrawlConfig) -> Option<ArtifactFormat> {
     let file_format = FileFormat::from_path(artifact_path)?;
 
-    if config
-        .formats
-        .as_ref()
-        .is_some_and(|formats| !formats.contains(&file_format))
-    {
+    if config.formats.as_ref().is_some_and(|formats| !formats.contains(&file_format)) {
         return None;
     }
 
     Some(file_format.artifact_format())
 }
-
-
 
 /// Results collected while inspecting one repository.
 pub(crate) struct RepositoryResult {

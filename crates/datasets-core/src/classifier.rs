@@ -1,13 +1,11 @@
 use std::io::Read;
 
-
-
 use super::{
     ContentType, CoreError,
     json::JsonVisitor,
     labeler::Labeler,
     tabular::TabularVisitor,
-    visitor::{Visitor, Visit},
+    visitor::{Visit, Visitor},
 };
 
 /// Structure of an artifact being inspected.
@@ -53,8 +51,6 @@ impl Classifier {
     }
 }
 
-
-
 /// Classifies an artifact for the requested scientific content types.
 ///
 /// # Errors
@@ -64,8 +60,7 @@ pub fn classify_artifact<R: Read>(
     format: ArtifactFormat,
     content_types: &[ContentType],
 ) -> Result<Visit, CoreError> {
-    let labelers: Vec<&dyn Labeler> =
-        content_types.iter().map(ContentType::labeler).collect();
+    let labelers: Vec<&dyn Labeler> = content_types.iter().map(ContentType::labeler).collect();
 
     match format {
         ArtifactFormat::Tabular => TabularVisitor::visit(reader, &labelers),
@@ -124,12 +119,9 @@ ethanol,CCO,C2H6O
 water,O,H2O
 ";
 
-        let classifications = classify_artifact(
-            csv.as_bytes(),
-            ArtifactFormat::Tabular,
-            &[ContentType::Smiles],
-        )?
-        .classifications;
+        let classifications =
+            classify_artifact(csv.as_bytes(), ArtifactFormat::Tabular, &[ContentType::Smiles])?
+                .classifications;
 
         assert!(
             classifications
@@ -257,5 +249,4 @@ broken;\xC3";
 
         Ok(())
     }
-
 }

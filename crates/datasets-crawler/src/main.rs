@@ -128,4 +128,3 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
 
     Ok(())
 }
-
