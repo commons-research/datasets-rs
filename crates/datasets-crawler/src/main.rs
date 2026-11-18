@@ -65,7 +65,6 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         formats: args.formats,
         search_terms: args.search_terms,
         max_repositories: args.max_repositories,
-        limits: args.limits,
         stall_timeout: STALL_TIMEOUT,
     };
 
@@ -118,58 +117,15 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
 
     let report = report_result?;
 
-    info!(
-        index_artifacts = report.crawler().index().artifacts().count(),
-        warning_count = report.warnings().len(),
-        crawl_status = ?report.status(),
-        "crawl concluded",
-    );
-
     match report.status() {
         CrawlStatus::Completed => {
             info!("Crawl completed successfully");
         }
         CrawlStatus::Interrupted => {
-            warn!("Crawl interrupted; returning partial results");
+            warn!("Crawl interrupted; results saved to DB");
         }
     }
-
-    print_results(report.crawler(), &config.content_types);
 
     Ok(())
 }
 
-/// Prints indexed artifacts and their classification evidence.
-fn print_results(crawler: &Crawler, content_types: &[ContentType]) {
-    for content_type in content_types {
-        println!("\nResults for {content_type}:");
-
-        let mut found = false;
-
-        for artifact in crawler.index().search(*content_type) {
-            found = true;
-
-            println!("- {} ({})", artifact.dataset_id(), artifact.dataset_url());
-            let inspection = artifact.inspection();
-            println!(
-                " Artifact:{} ({} records, {} bytes read, stopped at: {:?})",
-                artifact.artifact_ref(),
-                inspection.records,
-                inspection.bytes,
-                inspection.stop
-            );
-            for classification in artifact.matches(*content_type) {
-                println!(
-                    "  {}: {}/{} valid entries",
-                    classification.location(),
-                    classification.valid(),
-                    classification.inspected()
-                );
-            }
-        }
-
-        if !found {
-            println!("  No matching artifacts found.");
-        }
-    }
-}

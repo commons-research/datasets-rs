@@ -5,9 +5,8 @@ use csv::{ByteRecord, ReaderBuilder};
 use super::{
     super::{
         Classification, CoreError,
-        inspection::{InspectionLimits, StopReason, Visit},
         labeler::Labeler,
-        visitor::Visitor,
+        visitor::{Visitor, Visit, StopReason},
     },
     TabularDialect,
 };
@@ -26,7 +25,6 @@ impl TabularVisitor {
     pub(crate) fn visit_with_dialect<R: Read>(
         reader: R,
         labelers: &[&dyn Labeler],
-        limits: InspectionLimits,
         dialect: TabularDialect,
     ) -> Result<Visit, CoreError> {
         let mut csv_reader = ReaderBuilder::new()
@@ -52,10 +50,6 @@ impl TabularVisitor {
         let mut stop = StopReason::EndOfInput;
 
         loop {
-            if limits.max_records.is_some_and(|max_records| records >= max_records) {
-                stop = StopReason::RecordLimit;
-                break;
-            }
             match csv_reader.read_byte_record(&mut record) {
                 Ok(true) => {}
                 Ok(false) => break,
@@ -112,14 +106,13 @@ impl Visitor for TabularVisitor {
     fn visit<R: Read>(
         mut reader: R,
         labelers: &[&dyn Labeler],
-        limits: InspectionLimits,
     ) -> Result<Visit, CoreError> {
         let mut sample = Vec::new();
         reader.by_ref().take(DIALECT_SAMPLE_BYTES).read_to_end(&mut sample)?;
         let may_be_truncated = u64::try_from(sample.len()) == Ok(DIALECT_SAMPLE_BYTES);
         let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
 
-        Self::visit_with_dialect(Cursor::new(sample).chain(reader), labelers, limits, dialect)
+        Self::visit_with_dialect(Cursor::new(sample).chain(reader), labelers, dialect)
     }
 }
 
@@ -180,7 +173,6 @@ broken,garbage,C(
         let visit = <TabularVisitor as Visitor>::visit(
             csv.as_bytes(),
             &labelers,
-            InspectionLimits::default(),
         )?;
 
         let expected = vec![
@@ -208,7 +200,6 @@ sample_three,garbage,C(
         let visit = <TabularVisitor as Visitor>::visit(
             csv.as_bytes(),
             &labelers,
-            InspectionLimits::default(),
         )?;
 
         let expected = vec![
@@ -244,7 +235,6 @@ beta,gamma
         let visit = <TabularVisitor as Visitor>::visit(
             csv.as_bytes(),
             &labelers,
-            InspectionLimits::default(),
         )?;
 
         let expected = vec![
@@ -279,7 +269,6 @@ water;O;H2O
         let visit = TabularVisitor::visit_with_dialect(
             data.as_bytes(),
             &labelers,
-            InspectionLimits::default(),
             dialect,
         )?;
 
@@ -309,58 +298,12 @@ water;O;H2O
     }
 
     #[test]
-    fn stops_inspection_at_record_limit() -> Result<(), CoreError> {
-        let csv = "\
-name,smiles
-ethanol,CCO
-water,O
-broken,C(
-";
-
-        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
-
-        let limits = InspectionLimits { max_records: Some(2), ..InspectionLimits::default() };
-
-        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, limits)?;
-
-        let expected = vec![
-            Classification::new(Smiles, "name", 2, 0),
-            Classification::new(Smiles, "smiles", 2, 2),
-        ];
-
-        assert_eq!(visit.classifications, expected);
-        assert_eq!(visit.records, 2);
-        assert!(matches!(visit.stop, StopReason::RecordLimit));
-
-        Ok(())
-    }
-
-    #[test]
-    fn stops_at_record_limit() -> Result<(), CoreError> {
-        let csv = "name,smiles\na,CCO\nb,O\nc,CC\nd,N\n";
-
-        let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
-        let limits = InspectionLimits { max_records: Some(2), max_bytes: None };
-
-        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, limits)?;
-
-        assert_eq!(visit.records, 2, "only two records should be inspected");
-        assert_eq!(visit.stop, StopReason::RecordLimit, "the record limit should end the visit");
-        assert!(
-            visit.classifications.contains(&Classification::new(Smiles, "smiles", 2, 2)),
-            "evidence should cover only the inspected records"
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn tolerates_ragged_rows_and_invalid_utf8() -> Result<(), CoreError> {
         let csv = b"name,smiles\na,CCO,extra,cells\nb\n\xff\xfe,O\n";
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = TabularVisitor::visit(&csv[..], &labelers, InspectionLimits::UNLIMITED)?;
+        let visit = TabularVisitor::visit(&csv[..], &labelers)?;
 
         assert_eq!(visit.records, 3, "every row should be read");
         assert_eq!(visit.stop, StopReason::EndOfInput, "ragged rows should not end the visit");
@@ -378,7 +321,7 @@ broken,C(
 
         let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
 
-        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, InspectionLimits::UNLIMITED)?;
+        let visit = TabularVisitor::visit(csv.as_bytes(), &labelers, )?;
 
         assert_eq!(
             visit.classifications,

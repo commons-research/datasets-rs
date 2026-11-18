@@ -31,31 +31,17 @@ impl HuggingFaceSource {
 
 impl DatasetSource for HuggingFaceSource {
     async fn discover_datasets(
-        &self,
-        query: Option<&str>,
-        limit: Option<usize>,
+        &self
     ) -> Result<Vec<DatasetSummary>, CrawlerError> {
-        debug!(
-            query = ?query,
-            limit = ?limit,
-            "discovering Hugging Face datasets"
-        );
 
-        let stream = self.client.list_datasets().maybe_search(query).full(true).send()?;
+        let stream = self.client.list_datasets().full(true).send()?;
 
         // for future improvement - may want to count restricted repos.
         let eligible = stream.try_filter(|dataset| future::ready(is_unrestricted(dataset)));
 
-        let datasets: Vec<DatasetInfo> = match limit {
-            Some(limit) => eligible.take(limit).try_collect().await?,
-            None => eligible.try_collect().await?,
-        };
+        let datasets = eligible.try_collect().await?;
 
-        debug!(
-            query = ?query,
-            discovered_datasets = datasets.len(),
-            "finished Hugging Face dataset discovery"
-        );
+        
 
         Ok(datasets.iter().map(dataset_summary).collect())
     }

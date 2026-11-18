@@ -25,9 +25,6 @@ pub enum CrawlerError {
     /// Tokio async runtime failure
     #[error("failed to initialize Tokio runtime: {0}")]
     Runtime(#[source] io::Error),
-    /// Tracing subscriber init failed
-    #[error("failed to initialize logging: {0}")]
-    Logging(String),
     /// The selected source is not available in this build
     #[error("source is not available yet: {0}")]
     SourceUnavailable(&'static str),

@@ -1,12 +1,13 @@
 use std::io::Read;
 
+
+
 use super::{
     ContentType, CoreError,
-    inspection::{BudgetReader, Inspection, InspectionLimits, StopReason},
     json::JsonVisitor,
     labeler::Labeler,
     tabular::TabularVisitor,
-    visitor::Visitor,
+    visitor::{Visitor, Visit},
 };
 
 /// Structure of an artifact being inspected.
@@ -25,15 +26,13 @@ pub struct Classifier {
     format: ArtifactFormat,
     /// All [`ContentType`] that should be sought and classified in the dataset.
     content_types: Vec<ContentType>,
-    /// Bounds on how much of the artifact is inspected.
-    limits: InspectionLimits,
 }
 
 impl Classifier {
     /// Creates a classifier for an artifact format
     #[must_use]
     pub const fn new(format: ArtifactFormat) -> Self {
-        Self { format, content_types: Vec::new(), limits: InspectionLimits::UNLIMITED }
+        Self { format, content_types: Vec::new() }
     }
 
     /// Adds a scientific content type to evaluate
@@ -45,21 +44,16 @@ impl Classifier {
         self
     }
 
-    /// Bounds how much of the artifact is inspected.
-    #[must_use]
-    pub const fn limits(mut self, limits: InspectionLimits) -> Self {
-        self.limits = limits;
-        self
-    }
-
     /// Classifies artifact data using the configured content types
     ///
     /// # Errors
     /// - Returns [`CoreError`] if the artifact cannot be inspected
-    pub fn classify<R: Read>(&self, reader: R) -> Result<Inspection, CoreError> {
-        classify_artifact(reader, self.format, &self.content_types, self.limits)
+    pub fn classify<R: Read>(&self, reader: R) -> Result<Visit, CoreError> {
+        classify_artifact(reader, self.format, &self.content_types)
     }
 }
+
+
 
 /// Classifies an artifact for the requested scientific content types.
 ///
@@ -69,29 +63,14 @@ pub fn classify_artifact<R: Read>(
     reader: R,
     format: ArtifactFormat,
     content_types: &[ContentType],
-    limits: InspectionLimits,
-) -> Result<Inspection, CoreError> {
-    let labelers: Vec<&dyn Labeler> = content_types.iter().map(ContentType::labeler).collect();
+) -> Result<Visit, CoreError> {
+    let labelers: Vec<&dyn Labeler> =
+        content_types.iter().map(ContentType::labeler).collect();
 
-    let mut reader = BudgetReader::new(reader, limits.max_bytes);
-
-    let visit = match format {
-        ArtifactFormat::Tabular => TabularVisitor::visit(&mut reader, &labelers, limits)?,
-        ArtifactFormat::Json => JsonVisitor::visit(&mut reader, &labelers, limits)?,
-    };
-
-    let stop = if reader.limit_hit() && visit.stop != StopReason::RecordLimit {
-        StopReason::ByteLimit
-    } else {
-        visit.stop
-    };
-
-    Ok(Inspection {
-        classifications: visit.classifications,
-        records: visit.records,
-        bytes: reader.bytes_read(),
-        stop,
-    })
+    match format {
+        ArtifactFormat::Tabular => TabularVisitor::visit(reader, &labelers),
+        ArtifactFormat::Json => JsonVisitor::visit(reader, &labelers),
+    }
 }
 
 #[cfg(test)]
@@ -111,7 +90,6 @@ broken,C(,garbage
             csv.as_bytes(),
             ArtifactFormat::Tabular,
             &[ContentType::Smiles, ContentType::MolecularFormula],
-            InspectionLimits::UNLIMITED,
         )?
         .classifications;
 
@@ -150,7 +128,6 @@ water,O,H2O
             csv.as_bytes(),
             ArtifactFormat::Tabular,
             &[ContentType::Smiles],
-            InspectionLimits::UNLIMITED,
         )?
         .classifications;
 
@@ -281,43 +258,4 @@ broken;\xC3";
         Ok(())
     }
 
-    #[test]
-    fn reports_byte_limit_and_bytes_read() -> Result<(), CoreError> {
-        let csv = format!("name,smiles\n{}", "compound,CCO\n".repeat(1000));
-
-        let limits = InspectionLimits { max_records: None, max_bytes: Some(200) };
-
-        let inspection = classify_artifact(
-            csv.as_bytes(),
-            ArtifactFormat::Tabular,
-            &[ContentType::Smiles],
-            limits,
-        )?;
-
-        assert_eq!(inspection.bytes, 200, "exactly the byte budget should be read");
-        assert_eq!(inspection.stop, StopReason::ByteLimit, "the byte limit should end the visit");
-        assert!(!inspection.is_complete(), "a truncated inspection is not complete");
-        assert!(inspection.records < 1000, "only a prefix of the records should be inspected");
-
-        Ok(())
-    }
-
-    #[test]
-    fn byte_limit_keeps_evidence_from_truncated_json() -> Result<(), CoreError> {
-        let json = format!("[{}{{\"smiles\": \"O\"}}]", "{\"smiles\": \"CCO\"},".repeat(1000));
-
-        let limits = InspectionLimits { max_records: None, max_bytes: Some(210) };
-
-        let inspection = classify_artifact(
-            json.as_bytes(),
-            ArtifactFormat::Json,
-            &[ContentType::Smiles],
-            limits,
-        )?;
-
-        assert_eq!(inspection.stop, StopReason::ByteLimit, "the byte limit should end the visit");
-        assert!(inspection.records >= 9, "records before the cut should be inspected");
-
-        Ok(())
-    }
 }

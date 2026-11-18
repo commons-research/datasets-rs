@@ -8,8 +8,6 @@ mod classifier;
 mod content;
 /// Error handling
 mod error;
-/// Inspects limits and artifact results while visiting
-mod inspection;
 /// JSON data traversal and inspection.
 mod json;
 /// Labeling dataset item requirements
@@ -25,4 +23,3 @@ pub use classification::Classification;
 pub use classifier::{ArtifactFormat, Classifier, classify_artifact};
 pub use content::ContentType;
 pub use error::CoreError;
-pub use inspection::{Inspection, InspectionLimits, StopReason};

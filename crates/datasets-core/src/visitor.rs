@@ -1,10 +1,32 @@
 use std::io::Read;
 
 use super::{
+    Classification,
     error::CoreError,
-    inspection::{InspectionLimits, Visit},
     labeler::Labeler,
 };
+
+/// Reason the artifact's inspection ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StopReason {
+    /// Entire artifact was successfully read.
+    EndOfInput,
+    /// Reading or parsing failed after some evidence was collected.
+    Error(String),
+}
+
+
+/// Evidence collected while visiting one artifact.
+#[derive(Debug)]
+pub struct Visit {
+    /// Evidence collected per content type and location.
+    pub classifications: Vec<Classification>,
+    /// Number of records inspected.
+    pub records: usize,
+    /// Reason the visitor stopped.
+    pub stop: StopReason,
+}
+
 
 /// Visits structured dataset content and produces classification evidence.
 pub trait Visitor {
@@ -13,7 +35,6 @@ pub trait Visitor {
     /// # Parameters
     /// - `reader`: Input containing the dataset content.
     /// - `labelers`: Scientific labelers used to evaluate the content.
-    /// - `limits`: Bounds on how much of the input is inspected.
     ///
     /// # Errors
     /// - Returns an error if nothing could be inspected. A failure after some
@@ -21,6 +42,5 @@ pub trait Visitor {
     fn visit<R: Read>(
         reader: R,
         labelers: &[&dyn Labeler],
-        limits: InspectionLimits,
     ) -> Result<Visit, CoreError>;
 }

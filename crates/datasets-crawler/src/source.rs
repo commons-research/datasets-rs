@@ -101,16 +101,10 @@ pub struct SourceArtifact {
 pub trait DatasetSource: Send + Sync {
     /// Discovers datasets available from the remote source.
     ///
-    /// Parameters:
-    /// - `query`: Optional source-specific search query. If `None`, discovery
-    ///   is unrestricted by search terms.
-    /// - `limit`: Optional maximum number of datasets to return.
-    ///
     /// Errors:
     /// - Returns an error if dataset discovery fails.
     fn discover_datasets<'a>(
         &'a self,
-        query: Option<&'a str>,
     ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a, CrawlerError>;
 
     /// Lists the artifacts available within a dataset.
