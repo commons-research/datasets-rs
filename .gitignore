@@ -27,3 +27,6 @@ target
 
 # the database is mean to be local only
 datasets.sqlite
+
+# Do not add local vs code settings
+.vscode
