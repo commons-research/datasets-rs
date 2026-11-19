@@ -1,7 +1,7 @@
 //! Sqlite database initialization for crawler results.
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Transaction, params};
 
 use crate::{CrawlerError, crawl::RepositoryResult};
 
@@ -132,36 +132,20 @@ impl Database {
     ) -> Result<(), CrawlerError> {
         let tx = self.connection.transaction()?;
 
-        let repository_id: i64 = tx.query_row(
-            "
-        INSERT INTO repository (provider, external_id, url)
-        VALUES (?1, ?2, ?3)
-        ON CONFLICT (provider, external_id)
-        DO UPDATE SET url = excluded.url
-        RETURNING id
-        ",
-            params![provider, &result.repository.id, &result.repository.url],
-            |row| row.get(0),
+        let repository_id = insert_and_return_repository_id(
+            &tx,
+            provider,
+            &result.repository.id,
+            &result.repository.url,
         )?;
 
         for artifact in &result.artifacts {
-            let artifact_id: i64 = tx.query_row(
-                "
-            INSERT INTO artifact (repository_id, path, format, size_bytes)
-            VALUES (?1, ?2, ?3, ?4)
-            ON CONFLICT (repository_id, path)
-            DO UPDATE SET
-                format = excluded.format,
-                size_bytes = excluded.size_bytes
-            RETURNING id
-            ",
-                params![
-                    repository_id,
-                    &artifact.path,
-                    artifact.format.to_string(),
-                    i64::try_from(artifact.size_bytes)?,
-                ],
-                |row| row.get(0),
+            let artifact_id: i64 = insert_and_return_artifact_id(
+                &tx,
+                repository_id,
+                &artifact.path,
+                artifact.format.to_string(),
+                artifact.size_bytes,
             )?;
 
             tx.execute("DELETE FROM classification WHERE artifact_id = ?1", [artifact_id])?;
@@ -177,8 +161,8 @@ impl Database {
                         artifact_id,
                         classification.content_type().to_string(),
                         classification.location(),
-i64::try_from(classification.inspected())?,
-i64::try_from(classification.valid())?,
+                        i64::try_from(classification.inspected())?,
+                        i64::try_from(classification.valid())?,
                     ],
                 )?;
             }
@@ -233,4 +217,55 @@ i64::try_from(classification.valid())?,
 
         Ok(())
     }
+}
+
+/// Creates and retrieves the repository's ID
+///
+/// # Errors
+/// - Returns a [`CrawlerError`] if insertion fails.
+fn insert_and_return_repository_id(
+    tx: &Transaction<'_>,
+    provider: &str,
+    repo_id: &str,
+    url: &str,
+) -> Result<i64, CrawlerError> {
+    let repository_id: i64 = tx.query_row(
+        "
+        INSERT INTO repository (provider, external_id, url)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT (provider, external_id)
+        DO UPDATE SET url = excluded.url
+        RETURNING id
+        ",
+        params![provider, &repo_id, &url],
+        |row| row.get(0),
+    )?;
+    Ok(repository_id)
+}
+
+/// Creates and retrieves the artifact's ID
+///
+/// # Errors
+/// - Returns [`CrawlerError`] if insertion fails.
+fn insert_and_return_artifact_id(
+    tx: &Transaction<'_>,
+    repo_id: i64,
+    path: &str,
+    format: String,
+    size_bytes: u64,
+) -> Result<i64, CrawlerError> {
+    let artifact_id: i64 = tx.query_row(
+        "
+            INSERT INTO artifact (repository_id, path, format, size_bytes)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT (repository_id, path)
+            DO UPDATE SET
+                format = excluded.format,
+                size_bytes = excluded.size_bytes
+            RETURNING id
+            ",
+        params![repo_id, path, format, i64::try_from(size_bytes)?,],
+        |row| row.get(0),
+    )?;
+    Ok(artifact_id)
 }

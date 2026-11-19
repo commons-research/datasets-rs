@@ -114,7 +114,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     }
 
     /// Inspects the supported artifacts in one dataset.
-    /// 
+    ///
     /// # Errors
     /// - Returns a [`CrawlerError`] when failing to inspect repository.
     async fn inspect_repository(
