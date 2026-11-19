@@ -3,7 +3,7 @@ use std::time::Duration;
 use datasets_core::{ArtifactFormat, Classification, ContentType, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     CrawlerError,
@@ -132,28 +132,33 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         repository: &RepositorySummary,
     ) -> Result<Option<RepositoryResult>, CrawlerError> {
         let artifacts = tokio::select! {
-            biased;
+                biased;
 
-            () = self.cancellation.cancelled() => {
-                return Ok(None);
-            }
+                () = self.cancellation.cancelled() => {
+                    return Ok(None);
+                }
 
-            result = self.source.list_artifacts(&repository.id) => {
-                match result {
-                    Ok(artifacts) => artifacts,
-                    Err(error) => {
-                        return Ok(Some(RepositoryResult {
-                            repository: repository.clone(),
-                            artifacts: Vec::new(),
-                            failures: vec![Failure {
-                                stage: "list_artifacts",
-                                message: error.to_string(),
-                            }],
-                        }));
+                result = self.source.list_artifacts(&repository.id) => {
+                    match result {
+                        Ok(artifacts) => artifacts,
+                        Err(error) => {
+                                warn!(
+            repository = %repository.id,
+            error = %error,
+            "repository tree listing failed"
+        );
+                            return Ok(Some(RepositoryResult {
+                                repository: repository.clone(),
+                                artifacts: Vec::new(),
+                                failures: vec![Failure {
+                                    stage: "list_artifacts",
+                                    message: error.to_string(),
+                                }],
+                            }));
+                        }
                     }
                 }
-            }
-        };
+            };
 
         let mut result = RepositoryResult {
             repository: repository.clone(),
