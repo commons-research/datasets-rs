@@ -1,5 +1,5 @@
 //! Dataset crawler library and application utilities.
-
+#![allow(clippy::future_not_send)]
 /// Shared discovery and crawling workflow.
 mod crawl;
 /// Handles the indexing database control

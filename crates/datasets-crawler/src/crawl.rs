@@ -59,15 +59,6 @@ struct CrawlSession<'a, S: DatasetSource> {
     cancellation: &'a CancellationToken,
 }
 
-/// Outcome of inspecting a dataset / artifact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InspectionOutcome {
-    /// Inspection completed without interruption
-    Completed,
-    /// Inspection was interrupted.
-    Interrupted,
-}
-
 impl<S: DatasetSource> CrawlSession<'_, S> {
     /// Runs the crawl over the repositories found from source.
     ///
@@ -85,13 +76,12 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
     /// Inspects the current repository found.
     ///
-    /// # Errors:
+    /// # Errors
     /// - Returns [`CrawlerError`] when failing to interact with repository.
     async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, CrawlerError> {
         let mut repositories_crawled = 0usize;
 
-        // No search terms. Discovery is unrestricted.
-        let mut repositories = self.source.discover_datasets()?;
+        let repositories = self.source.discover_datasets()?;
         pin_mut!(repositories);
         while let Some(repository) = tokio::select! {
             biased;
@@ -102,7 +92,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
             repository = repositories.try_next() => repository?,
         } {
-            if self.database.repository_is_crawled(&repository)? {
+            if self.database.repository_is_crawled(self.source.provider(), &repository.id)? {
                 continue;
             }
 
@@ -111,7 +101,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             };
 
             // Persist only after the repository has finished.
-            self.database.save_repository(run_id, &result)?;
+            self.database.save_repository(run_id, self.source.provider(), &result)?;
 
             repositories_crawled += 1;
 
@@ -124,6 +114,9 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     }
 
     /// Inspects the supported artifacts in one dataset.
+    /// 
+    /// # Errors
+    /// - Returns a [`CrawlerError`] when failing to inspect repository.
     async fn inspect_repository(
         &self,
         repository: &RepositorySummary,
@@ -143,7 +136,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                             repository: repository.clone(),
                             artifacts: Vec::new(),
                             failures: vec![Failure {
-                                artifact_path: None,
                                 stage: "list_artifacts",
                                 message: error.to_string(),
                             }],
@@ -179,7 +171,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
     /// Inspects one supported artifact.
     ///
-    /// # Errors:
+    /// # Errors
     /// - Returns [`CrawlerError`] when interacting with artifact fails.
     async fn inspect_artifact(
         &self,
@@ -203,10 +195,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                             path: artifact.path.clone(),
                             format,
                             size_bytes: artifact.size_bytes,
-                            records_inspected: None,
                             classifications: Vec::new(),
                             failure: Some(Failure {
-                                artifact_path: Some(artifact.path.clone()),
                                 stage: "open_artifact",
                                 message: error.to_string(),
                             }),
@@ -232,7 +222,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                     path: artifact.path.clone(),
                     format,
                     size_bytes: artifact.size_bytes,
-                    records_inspected: Some(visit.records),
                     classifications: visit.classifications,
                     failure: None,
                 }))
@@ -245,10 +234,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                     path: artifact.path.clone(),
                     format,
                     size_bytes: artifact.size_bytes,
-                    records_inspected: None,
                     classifications: Vec::new(),
                     failure: Some(Failure {
-                        artifact_path: Some(artifact.path.clone()),
                         stage: "classify_artifact",
                         message: error.to_string(),
                     }),
@@ -270,25 +257,33 @@ fn select_artifact_format(artifact_path: &str, config: &CrawlConfig) -> Option<A
 }
 
 /// Results collected while inspecting one repository.
-pub(crate) struct RepositoryResult {
+pub struct RepositoryResult {
+    /// Repository metadata.
     pub repository: RepositorySummary,
+    /// Inspected artifacts.
     pub artifacts: Vec<ArtifactResult>,
+    /// Repository-level failures.
     pub failures: Vec<Failure>,
 }
 
 /// Results from one artifact.
-pub(crate) struct ArtifactResult {
+pub struct ArtifactResult {
+    /// Path of the inspected artifact.
     pub path: String,
+    /// Format used to inspect the artifact.
     pub format: ArtifactFormat,
+    /// Artifact size in bytes.
     pub size_bytes: u64,
-    pub records_inspected: Option<usize>,
+    /// Classification evidence.
     pub classifications: Vec<Classification>,
+    /// Failure encountered while inspecting the artifact.
     pub failure: Option<Failure>,
 }
 
 /// A repository- or artifact-level failure.
-pub(crate) struct Failure {
-    pub artifact_path: Option<String>,
+pub struct Failure {
+    /// Operation that failed.
     pub stage: &'static str,
+    /// Error description.
     pub message: String,
 }

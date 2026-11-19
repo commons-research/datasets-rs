@@ -1,12 +1,13 @@
 //! Sqlite database initialization for crawler results.
 use std::path::Path;
 
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, params};
 
-use crate::CrawlerError;
+use crate::{CrawlerError, crawl::RepositoryResult};
 
 /// Manages database storage of crawler results.
 pub struct Database {
+    /// Sqlite connection used to persist crawl results.
     connection: Connection,
 }
 
@@ -15,7 +16,7 @@ impl Database {
     ///
     /// # Errors
     /// Returns an error if the database cannot be opened or initialized.
-    pub fn open_database(path: impl AsRef<Path>) -> Result<Connection, CrawlerError> {
+    pub fn open_database(path: impl AsRef<Path>) -> Result<Self, CrawlerError> {
         let connection = Connection::open(path)?;
 
         connection.execute_batch(
@@ -44,7 +45,6 @@ impl Database {
             path                TEXT NOT NULL,
             format              TEXT NOT NULL,
             size_bytes          INTEGER NOT NULL,
-            records_inspected   INTEGER,
             UNIQUE (repository_id, path)
         );
 
@@ -68,7 +68,7 @@ impl Database {
         ",
         )?;
 
-        Ok(connection)
+        Ok(Self { connection })
     }
 
     /// Starts a new crawl run and returns its database ID.
@@ -90,6 +90,146 @@ impl Database {
             "UPDATE crawl_run SET finished_at = CURRENT_TIMESTAMP WHERE id = ?1",
             [run_id],
         )?;
+
+        Ok(())
+    }
+
+    /// Verifies whether a given repository has already been visited.
+    ///
+    /// # Errors
+    /// - Returns an error when failing to work with database.
+    pub fn repository_is_crawled(
+        &self,
+        provider: &str,
+        external_id: &str,
+    ) -> Result<bool, CrawlerError> {
+        let crawled = self.connection.query_row(
+            "
+            SELECT EXISTS (
+                SELECT 1 
+                FROM repository
+                WHERE provider = ?1
+                AND external_id = ?2
+                AND last_crawled_at IS NOT NULL
+            )
+        ",
+            [provider, external_id],
+            |row| row.get(0),
+        )?;
+
+        Ok(crawled)
+    }
+
+    /// Saves repository crawl results to the database.
+    ///
+    /// # Errors
+    /// - Returns an error if a database operation fails.
+    pub fn save_repository(
+        &mut self,
+        run_id: i64,
+        provider: &str,
+        result: &RepositoryResult,
+    ) -> Result<(), CrawlerError> {
+        let tx = self.connection.transaction()?;
+
+        let repository_id: i64 = tx.query_row(
+            "
+        INSERT INTO repository (provider, external_id, url)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT (provider, external_id)
+        DO UPDATE SET url = excluded.url
+        RETURNING id
+        ",
+            params![provider, &result.repository.id, &result.repository.url],
+            |row| row.get(0),
+        )?;
+
+        for artifact in &result.artifacts {
+            let artifact_id: i64 = tx.query_row(
+                "
+            INSERT INTO artifact (repository_id, path, format, size_bytes)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT (repository_id, path)
+            DO UPDATE SET
+                format = excluded.format,
+                size_bytes = excluded.size_bytes
+            RETURNING id
+            ",
+                params![
+                    repository_id,
+                    &artifact.path,
+                    artifact.format.to_string(),
+                    i64::try_from(artifact.size_bytes)?,
+                ],
+                |row| row.get(0),
+            )?;
+
+            tx.execute("DELETE FROM classification WHERE artifact_id = ?1", [artifact_id])?;
+
+            for classification in &artifact.classifications {
+                tx.execute(
+                    "
+                INSERT INTO classification
+                    (artifact_id, content_type, location, inspected, valid)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                ",
+                    params![
+                        artifact_id,
+                        classification.content_type().to_string(),
+                        classification.location(),
+i64::try_from(classification.inspected())?,
+i64::try_from(classification.valid())?,
+                    ],
+                )?;
+            }
+
+            if let Some(failure) = &artifact.failure {
+                tx.execute(
+                    "
+                INSERT INTO failure
+                    (repository_id, artifact_id, stage, message)
+                VALUES (?1, ?2, ?3, ?4)
+                ",
+                    params![repository_id, artifact_id, failure.stage, &failure.message,],
+                )?;
+            }
+        }
+
+        for failure in &result.failures {
+            tx.execute(
+                "
+            INSERT INTO failure (repository_id, stage, message)
+            VALUES (?1, ?2, ?3)
+            ",
+                params![repository_id, failure.stage, &failure.message],
+            )?;
+        }
+
+        let completed = result.failures.is_empty()
+            && result.artifacts.iter().all(|artifact| artifact.failure.is_none());
+
+        if completed {
+            tx.execute(
+                "
+            UPDATE repository
+            SET last_crawled_at = CURRENT_TIMESTAMP
+            WHERE id = ?1
+            ",
+                [repository_id],
+            )?;
+        }
+
+        // Count this repository in the current crawl run.
+        tx.execute(
+            "
+        UPDATE crawl_run
+        SET datasets_crawled = datasets_crawled + 1
+        WHERE id = ?1
+        ",
+            [run_id],
+        )?;
+
+        tx.commit()?;
 
         Ok(())
     }

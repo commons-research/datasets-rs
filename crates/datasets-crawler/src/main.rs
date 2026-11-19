@@ -4,7 +4,6 @@
 
 use std::time::Duration;
 
-use datasets_core::ContentType;
 use datasets_crawler::{CrawlConfig, CrawlStatus, CrawlerError, HuggingFaceSource, crawl};
 
 /// Command-line configuration.
@@ -14,7 +13,6 @@ use cli::{Args, SourceArg};
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
 
 use self::cli::ResolvedArgs;
 
@@ -53,9 +51,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         source = ?selected_source,
         content_types = ?config.content_types,
         formats = ?config.formats,
-        search_terms = ?config.search_terms,
         max_repositories = config.max_repositories,
-        limits = ?config.limits,
         "starting crawl",
     );
 
@@ -98,7 +94,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
 
     let report = report_result?;
 
-    match report.status() {
+    match report {
         CrawlStatus::Completed => {
             info!("Crawl completed successfully");
         }

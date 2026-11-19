@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{fmt, io::Read};
 
 use super::{
     ContentType, CoreError,
@@ -15,6 +15,15 @@ pub enum ArtifactFormat {
     Tabular,
     /// JSON data.
     Json,
+}
+
+impl fmt::Display for ArtifactFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tabular => write!(f, "Tabular"),
+            Self::Json => write!(f, "Json"),
+        }
+    }
 }
 
 /// Configures artifact classification

@@ -34,4 +34,7 @@ pub enum CrawlerError {
     /// Error operating sqlite database
     #[error("database operation failed: {0}")]
     Database(#[from] rusqlite::Error),
+    /// Failed to convert an integer
+    #[error("integer conversion failed: {0}")]
+    IntegerConversion(#[from] std::num::TryFromIntError),
 }

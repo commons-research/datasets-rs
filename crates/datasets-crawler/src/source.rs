@@ -101,11 +101,11 @@ pub struct SourceArtifact {
 pub trait DatasetSource: Send + Sync {
     /// Discovers datasets available from the remote source.
     ///
-    /// Errors:
+    /// # Errors
     /// - Returns an error if dataset discovery fails.
-    fn discover_datasets<'a>(
-        &'a self,
-    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a, CrawlerError>;
+    fn discover_datasets(
+        &self,
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError>;
 
     /// Lists the artifacts available within a dataset.
     ///
@@ -113,7 +113,7 @@ pub trait DatasetSource: Send + Sync {
     /// - `dataset_id`: Identifier of the dataset whose artifacts should be
     ///   listed.
     ///
-    /// Errors:
+    /// # Errors
     /// - Returns an error if artifact listing fails.
     fn list_artifacts<'a>(
         &'a self,
@@ -133,4 +133,7 @@ pub trait DatasetSource: Send + Sync {
         dataset_id: &'a str,
         artifact: &'a SourceArtifact,
     ) -> impl Future<Output = Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError>> + Send + 'a;
+
+    /// Returns the provider identifier used for database records.
+    fn provider(&self) -> &'static str;
 }

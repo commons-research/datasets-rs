@@ -29,9 +29,9 @@ impl HuggingFaceSource {
 }
 
 impl DatasetSource for HuggingFaceSource {
-    fn discover_datasets<'a>(
-        &'a self,
-    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send + 'a, CrawlerError>
+    fn discover_datasets(
+        &self,
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError>
     {
         let stream = self.client.list_datasets().full(true).send()?;
 
@@ -104,6 +104,10 @@ impl DatasetSource for HuggingFaceSource {
             .into_async_read();
 
         Ok(reader)
+    }
+
+    fn provider(&self) -> &'static str {
+        "hf"
     }
 }
 

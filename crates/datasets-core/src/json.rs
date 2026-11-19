@@ -32,9 +32,9 @@ impl Visitor for JsonVisitor {
             if let Err(error) = walker.deserialize(&mut deserializer) {
                 if state.evidence.is_empty() {
                     return Err(error.into());
-                } else {
-                    stop = StopReason::Error(error.to_string());
                 }
+                stop = StopReason::Error(error.to_string());
+
                 break;
             }
 
