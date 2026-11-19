@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use futures::{AsyncRead, Stream, TryStreamExt, future};
+use futures::{AsyncRead, Stream, TryStreamExt, future, pin_mut};
 use hf_hub::{
     HFClient,
     progress::{DownloadEvent, ProgressEvent, ProgressHandler},
@@ -60,32 +60,31 @@ impl DatasetSource for HuggingFaceSource {
         let dataset = self.client.dataset(owner, name);
 
         let entries = dataset.list_tree().recursive(true).expand(true).send()?;
+        pin_mut!(entries);
 
         let mut entries_seen = 0usize;
+        let mut artifacts = Vec::new();
 
-        let artifacts: Vec<SourceArtifact> = entries
-            .inspect_ok(|_| {
-                entries_seen += 1;
+        while let Some(entry) = entries.try_next().await? {
+            entries_seen += 1;
 
-                if entries_seen.is_multiple_of(1000) {
-                    info!(
-                        repository = dataset_id,
-                        entries = entries_seen,
-                        elapsed_secs = started.elapsed().as_secs(),
-                        "gathering repository tree"
-                    );
-                }
-            })
-            .try_filter_map(|entry| {
-                future::ready(Ok(match entry {
-                    RepoTreeEntry::File { path, size, .. } => {
-                        Some(SourceArtifact { path, size_bytes: size })
-                    }
-                    RepoTreeEntry::Directory { .. } => None,
-                }))
-            })
-            .try_collect()
-            .await?;
+            if let RepoTreeEntry::File { path, size, .. } = entry {
+                artifacts.push(SourceArtifact { path, size_bytes: size });
+            }
+
+            if entries_seen.is_multiple_of(1000) {
+                info!(
+                    repository = dataset_id,
+                    entries = entries_seen,
+                    elapsed_secs = started.elapsed().as_secs(),
+                    "gathering repository tree"
+                );
+            }
+
+            if entries_seen.is_multiple_of(50) {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
 
         info!(
             repository = dataset_id,
