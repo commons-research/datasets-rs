@@ -59,7 +59,7 @@ impl DatasetSource for HuggingFaceSource {
         let (owner, name) = split_id(dataset_id);
         let dataset = self.client.dataset(owner, name);
 
-        let entries = dataset.list_tree().recursive(true).expand(true).send()?;
+        let entries = dataset.list_tree().recursive(true).send()?;
         pin_mut!(entries);
 
         let mut entries_seen = 0usize;
@@ -79,10 +79,7 @@ impl DatasetSource for HuggingFaceSource {
                     elapsed_secs = started.elapsed().as_secs(),
                     "gathering repository tree"
                 );
-            }
-
-            if entries_seen.is_multiple_of(50) {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_millis(1000)).await;
             }
         }
 
