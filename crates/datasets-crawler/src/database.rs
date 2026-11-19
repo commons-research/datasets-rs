@@ -144,7 +144,7 @@ impl Database {
                 &tx,
                 repository_id,
                 &artifact.path,
-                artifact.format.to_string(),
+                &artifact.format.to_string(),
                 artifact.size_bytes,
             )?;
 
@@ -251,7 +251,7 @@ fn insert_and_return_artifact_id(
     tx: &Transaction<'_>,
     repo_id: i64,
     path: &str,
-    format: String,
+    format: &str,
     size_bytes: u64,
 ) -> Result<i64, CrawlerError> {
     let artifact_id: i64 = tx.query_row(

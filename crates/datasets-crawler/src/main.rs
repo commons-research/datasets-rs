@@ -1,10 +1,12 @@
 //! Dataset crawler application entry point.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
-
+#![allow(clippy::future_not_send)]
 use std::time::Duration;
 
-use datasets_crawler::{CrawlConfig, CrawlStatus, CrawlerError, HuggingFaceSource, crawl};
+use datasets_crawler::{
+    CrawlConfig, CrawlStatus, CrawlerError, Database, HuggingFaceSource, crawl,
+};
 
 /// Command-line configuration.
 mod cli;
@@ -17,7 +19,7 @@ use tracing::{info, warn};
 use self::cli::ResolvedArgs;
 
 /// Longest an artifact stream may stall before being abandoned.
-const STALL_TIMEOUT: Duration = Duration::from_secs(30);
+const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Runs the dataset crawler.
 ///
@@ -46,6 +48,8 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         max_repositories: args.max_repositories,
         stall_timeout: STALL_TIMEOUT,
     };
+
+    let mut database = Database::open_database("datasets.sqlite")?;
 
     info!(
         source = ?selected_source,
@@ -81,7 +85,7 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
     let report_result = match selected_source {
         SourceArg::HuggingFace => {
             match HuggingFaceSource::new() {
-                Ok(source) => crawl(&source, &config, &cancellation).await,
+                Ok(source) => crawl(&source, &mut database, &config, &cancellation).await,
                 Err(error) => Err(error),
             }
         }

@@ -24,3 +24,6 @@ target
 # Added by cargo
 
 /target
+
+# the database is mean to be local only
+datasets.sqlite
