@@ -15,6 +15,7 @@ use cli::{Args, SourceArg};
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
 use self::cli::ResolvedArgs;
 
@@ -26,6 +27,13 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 /// # Errors
 /// - Returns an error if initialization or dataset discovery fails.
 fn main() -> Result<(), CrawlerError> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("datasets_crawler=info,hf_hub=warn")),
+        )
+        .init();
+
     let args = Args::parse_args();
     info!("Initializing asynchronous runtime");
 

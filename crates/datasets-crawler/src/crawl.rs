@@ -3,6 +3,7 @@ use std::time::Duration;
 use datasets_core::{ArtifactFormat, Classification, ContentType, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 use crate::{
     CrawlerError,
@@ -96,12 +97,21 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 continue;
             }
 
+            info!(repository = %repository.id, "inspecting repository");
+
             let Some(result) = self.inspect_repository(&repository).await? else {
                 return Ok(CrawlStatus::Interrupted);
             };
 
             // Persist only after the repository has finished.
             self.database.save_repository(run_id, self.source.provider(), &result)?;
+
+            info!(
+                repository = %repository.id,
+                artifacts = result.artifacts.len(),
+                failures = result.failures.len(),
+                "repository saved"
+            );
 
             repositories_crawled += 1;
 

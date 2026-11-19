@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use futures::{AsyncRead, Stream, TryStreamExt, future};
 use hf_hub::{
     HFClient,
@@ -24,7 +26,12 @@ impl HuggingFaceSource {
     /// # Errors
     /// - Returns error if HF Client cannot be created
     pub fn new() -> Result<Self, CrawlerError> {
-        Ok(Self { client: HFClient::new()? })
+        let client = HFClient::builder()
+            .retry_base_delay(Duration::from_secs(30))
+            .retry_max_attempts(6)
+            .build()?;
+
+        Ok(Self { client })
     }
 }
 
