@@ -166,14 +166,20 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             failures: Vec::new(),
         };
 
-        for artifact in artifacts {
+        let supported: Vec<_> = artifacts
+            .into_iter()
+            .filter_map(|artifact| {
+                select_artifact_format(&artifact.path, self.config)
+                    .map(|format| (artifact, format))
+            })
+            .collect();
+
+        let stride = supported.len().div_ceil(100).max(1);
+
+        for (artifact, format) in supported.into_iter().step_by(stride) {
             if self.cancellation.is_cancelled() {
                 return Ok(None);
             }
-
-            let Some(format) = select_artifact_format(&artifact.path, self.config) else {
-                continue;
-            };
 
             match self.inspect_artifact(repository, &artifact, format).await? {
                 Some(artifact_result) => result.artifacts.push(artifact_result),
