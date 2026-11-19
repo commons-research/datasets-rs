@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::{AsyncRead, Stream, TryStreamExt, future};
 use hf_hub::{
@@ -7,6 +7,7 @@ use hf_hub::{
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
+use tracing::info;
 
 use super::super::{
     error::CrawlerError,
@@ -51,12 +52,30 @@ impl DatasetSource for HuggingFaceSource {
     }
 
     async fn list_artifacts(&self, dataset_id: &str) -> Result<Vec<SourceArtifact>, CrawlerError> {
+        let started = Instant::now();
+
+        info!(repository = dataset_id, "starting repository tree listing");
+
         let (owner, name) = split_id(dataset_id);
         let dataset = self.client.dataset(owner, name);
 
         let entries = dataset.list_tree().recursive(true).expand(true).send()?;
 
-        entries
+        let mut entries_seen = 0usize;
+
+        let artifacts: Vec<SourceArtifact> = entries
+            .inspect_ok(|_| {
+                entries_seen += 1;
+
+                if entries_seen.is_multiple_of(1000) {
+                    info!(
+                        repository = dataset_id,
+                        entries = entries_seen,
+                        elapsed_secs = started.elapsed().as_secs(),
+                        "gathering repository tree"
+                    );
+                }
+            })
             .try_filter_map(|entry| {
                 future::ready(Ok(match entry {
                     RepoTreeEntry::File { path, size, .. } => {
@@ -66,8 +85,17 @@ impl DatasetSource for HuggingFaceSource {
                 }))
             })
             .try_collect()
-            .await
-            .map_err(Into::into)
+            .await?;
+
+        info!(
+            repository = dataset_id,
+            entries = entries_seen,
+            files = artifacts.len(),
+            elapsed_secs = started.elapsed().as_secs(),
+            "repository tree listing completed"
+        );
+
+        Ok(artifacts)
     }
 
     async fn open_artifact<'a>(
