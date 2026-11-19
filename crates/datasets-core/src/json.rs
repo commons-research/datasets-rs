@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, io::Read};
+use std::{collections::BTreeMap, fmt, io::{Cursor, Read}};
 
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess};
 
@@ -16,34 +16,49 @@ impl Visitor for JsonVisitor {
     /// scientific labelers without loading into memory.
     ///
     /// # Errors
-    ///  - Returns [`CoreError`] if the input fails before any evidence is
-    ///    collected.
-    fn visit<R: Read>(reader: R, labelers: &[&dyn Labeler]) -> Result<Visit, CoreError> {
-        let mut state =
-            WalkState { labelers, evidence: BTreeMap::new(), path: String::from("$"), records: 0 };
+    /// - Returns [`CoreError`] if the input fails before any evidence is collected.
+    fn visit<R: Read>(mut reader: R, labelers: &[&dyn Labeler]) -> Result<Visit, CoreError> {
+        let mut sample = Vec::new();
+        reader.by_ref().take(64 * 1024).read_to_end(&mut sample)?;
 
-        let mut deserializer = serde_json::Deserializer::from_reader(reader);
-        let mut stop = StopReason::EndOfInput;
+        // Reuse the existing parser for both inspections.
+        let inspect = |reader: &mut dyn Read| -> Result<Visit, CoreError> {
+            let mut state =
+                WalkState { labelers, evidence: BTreeMap::new(), path: String::from("$"), records: 0 };
 
-        while deserializer.end().is_err() {
-            let records_before = state.records;
-            let walker = Walker { state: &mut state, depth: 0 };
+            let mut deserializer = serde_json::Deserializer::from_reader(reader);
+            let mut stop = StopReason::EndOfInput;
 
-            if let Err(error) = walker.deserialize(&mut deserializer) {
-                if state.evidence.is_empty() {
-                    return Err(error.into());
+            while deserializer.end().is_err() {
+                let records_before = state.records;
+                let walker = Walker { state: &mut state, depth: 0 };
+
+                if let Err(error) = walker.deserialize(&mut deserializer) {
+                    if state.evidence.is_empty() {
+                        return Err(error.into());
+                    }
+                    stop = StopReason::Error(error.to_string());
+                    break;
                 }
-                stop = StopReason::Error(error.to_string());
 
-                break;
+                if state.records == records_before {
+                    state.records += 1;
+                }
+                state.path.truncate(1);
             }
 
-            if state.records == records_before {
-                state.records += 1;
+            Ok(Visit { classifications: state.classifications(), records: state.records, stop })
+        };
+
+        // First pass: inspect the buffered data.
+        if let Ok(preview) = inspect(&mut sample.as_slice()) {
+            if preview.classifications.iter().all(|c| c.valid() < 5) {
+                return Ok(preview);
             }
-            state.path.truncate(1);
         }
-        Ok(Visit { classifications: state.classifications(), records: state.records, stop })
+
+        // Second pass: replay the buffer, then continue the original stream.
+        inspect(&mut Cursor::new(sample).chain(reader))
     }
 }
 

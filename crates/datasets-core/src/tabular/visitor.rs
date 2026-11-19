@@ -110,6 +110,12 @@ impl Visitor for TabularVisitor {
         let may_be_truncated = u64::try_from(sample.len()) == Ok(FIRST_PASS_BYTES);
         let dialect = TabularDialect::detect_sample(&sample, may_be_truncated)?;
 
+        let preview = Self::visit_with_dialect(sample.as_slice(), labelers, dialect)?;
+
+        if preview.classifications.iter().all(|c| c.valid() < 5) {
+            return Ok(preview);
+        }
+
         Self::visit_with_dialect(Cursor::new(sample).chain(reader), labelers, dialect)
     }
 }
