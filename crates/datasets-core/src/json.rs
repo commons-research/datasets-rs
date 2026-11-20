@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fmt, io::{Cursor, Read}};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    io::{Cursor, Read},
+};
 
 use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess};
 
@@ -16,15 +20,20 @@ impl Visitor for JsonVisitor {
     /// scientific labelers without loading into memory.
     ///
     /// # Errors
-    /// - Returns [`CoreError`] if the input fails before any evidence is collected.
+    /// - Returns [`CoreError`] if the input fails before any evidence is
+    ///   collected.
     fn visit<R: Read>(mut reader: R, labelers: &[&dyn Labeler]) -> Result<Visit, CoreError> {
         let mut sample = Vec::new();
         reader.by_ref().take(64 * 1024).read_to_end(&mut sample)?;
 
         // Reuse the existing parser for both inspections.
         let inspect = |reader: &mut dyn Read| -> Result<Visit, CoreError> {
-            let mut state =
-                WalkState { labelers, evidence: BTreeMap::new(), path: String::from("$"), records: 0 };
+            let mut state = WalkState {
+                labelers,
+                evidence: BTreeMap::new(),
+                path: String::from("$"),
+                records: 0,
+            };
 
             let mut deserializer = serde_json::Deserializer::from_reader(reader);
             let mut stop = StopReason::EndOfInput;

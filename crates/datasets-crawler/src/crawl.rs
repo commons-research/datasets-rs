@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use datasets_core::{ArtifactFormat, Classification, ContentType, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
@@ -169,8 +169,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         let supported: Vec<_> = artifacts
             .into_iter()
             .filter_map(|artifact| {
-                select_artifact_format(&artifact.path, self.config)
-                    .map(|format| (artifact, format))
+                select_artifact_format(&artifact.path, self.config).map(|format| (artifact, format))
             })
             .collect();
 
@@ -200,6 +199,15 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         artifact: &SourceArtifact,
         format: ArtifactFormat,
     ) -> Result<Option<ArtifactResult>, CrawlerError> {
+        let started = Instant::now();
+
+        info!(
+            repository = %repository.id,
+            artifact = %artifact.path,
+            size_bytes = artifact.size_bytes,
+            "opening artifact"
+        );
+
         let stream = tokio::select! {
             biased;
 
@@ -227,6 +235,12 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             }
         };
 
+        info!(
+            repository = %repository.id,
+            artifact = %artifact.path,
+            "classifying artifact"
+        );
+
         let reader = super::reader::BlockingReader::new(
             stream,
             self.cancellation,
@@ -236,6 +250,13 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         let result = tokio::task::block_in_place(|| {
             classify_artifact(reader, format, &self.config.content_types)
         });
+
+        info!(
+            repository = %repository.id,
+            artifact = %artifact.path,
+            elapsed_secs = started.elapsed().as_secs(),
+            "artifact inspection finished"
+        );
 
         match result {
             Ok(visit) => {
