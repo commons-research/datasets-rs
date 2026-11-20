@@ -173,7 +173,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             })
             .collect();
 
-        let stride = supported.len().div_ceil(100).max(1);
+        let stride = supported.len().div_ceil(1000).max(1);
 
         for (artifact, format) in supported.into_iter().step_by(stride) {
             if self.cancellation.is_cancelled() {
@@ -251,6 +251,10 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             classify_artifact(reader, format, &self.config.content_types)
         });
 
+		if self.cancellation.is_cancelled() {
+			return Ok(None);
+		}
+		
         info!(
             repository = %repository.id,
             artifact = %artifact.path,

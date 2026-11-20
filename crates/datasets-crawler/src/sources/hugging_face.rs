@@ -71,7 +71,15 @@ impl DatasetSource for HuggingFaceSource {
             if let RepoTreeEntry::File { path, size, .. } = entry {
                 artifacts.push(SourceArtifact { path, size_bytes: size });
             }
-
+            if entries_seen >= 1000 {
+    info!(
+        repository = dataset_id,
+        entries = entries_seen,
+        files = artifacts.len(),
+        "repository tree listing limit reached"
+    );
+    break;
+}
             if entries_seen.is_multiple_of(1000) {
                 info!(
                     repository = dataset_id,
