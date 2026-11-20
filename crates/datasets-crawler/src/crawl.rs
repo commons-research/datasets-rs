@@ -251,10 +251,10 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             classify_artifact(reader, format, &self.config.content_types)
         });
 
-		if self.cancellation.is_cancelled() {
-			return Ok(None);
-		}
-		
+        if self.cancellation.is_cancelled() {
+            return Ok(None);
+        }
+
         info!(
             repository = %repository.id,
             artifact = %artifact.path,
