@@ -35,7 +35,8 @@ impl Visitor for JsonVisitor {
                 records: 0,
             };
 
-            let mut deserializer = serde_json::Deserializer::from_reader(reader);
+            let buffered = std::io::BufReader::with_capacity(256 * 1024, reader);
+            let mut deserializer = serde_json::Deserializer::from_reader(buffered);
             let mut stop = StopReason::EndOfInput;
 
             while deserializer.end().is_err() {
