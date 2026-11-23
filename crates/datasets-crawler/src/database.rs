@@ -150,7 +150,9 @@ impl Database {
 
             tx.execute("DELETE FROM classification WHERE artifact_id = ?1", [artifact_id])?;
 
-            for classification in artifact.classifications.iter().filter(|classification| classification.valid() > 0) {
+            for classification in
+                artifact.classifications.iter().filter(|classification| classification.valid() > 0)
+            {
                 tx.execute(
                     "
                 INSERT INTO classification

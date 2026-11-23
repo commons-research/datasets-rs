@@ -67,7 +67,7 @@ A negative result remains useful. If content-aware labeling does not improve on 
 
 The following projects address adjacent aspects of dataset discovery, description, acquisition, caching, packaging, or reproducibility. None of the closest comparisons appears to represent a failed or abandoned project; the relevant distinction is therefore their scope and the problem each chooses to solve.
 
-| Project | Approach | Maintenance/use evidence | Limitation relative to `metabolomics-datasets-rs` |
+| Project | Approach | Maintenance/use evidence | Limitation relative to `datasets-rs` |
 | --- | --- | --- | --- |
 | **Hugging Face `datasets`** | Python library and Hub integration for discovering, downloading, caching, streaming, transforming, and loading datasets through a common API. | Actively maintained official project with current documentation and integration across the Hugging Face ecosystem; the accompanying `datasets` work is widely used in ML research. [Hugging Face](https://huggingface.co/docs/datasets/main/en/index) | Optimized for general ML datasets and the Hugging Face/Python ecosystem rather than metabolomics-specific scientific resources, metadata, and provenance. |
 | **TensorFlow Datasets** | Per-dataset builders encode download, preparation, version, features, citation, and split information. | Active official TensorFlow project with current documentation and a large catalogue of supported datasets. [TensorFlow](https://www.tensorflow.org/datasets/overview) | Primarily a curated ML dataset catalogue. Dataset-specific builder implementations remain common, and the abstraction is tied closely to Python/TensorFlow workflows. |

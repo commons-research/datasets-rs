@@ -55,7 +55,7 @@ impl ContentType {
     pub fn all_types() -> Vec<Self> {
         Self::VARIANTS.to_vec()
     }
-    /// Returns the [`Labeler`] associated with the content type.
+    /// Returns the `Labeler` implementation associated with the content type.
     #[must_use]
     pub fn labeler(&self) -> &'static dyn Labeler {
         match self {

@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use datasets_core::{ArtifactFormat, Classification, ContentType, classify_artifact};
+use datasets_core::{ArtifactFormat, Classification, ContentType, StopReason, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -264,13 +264,26 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
 
         match result {
             Ok(visit) => {
-                Ok(Some(ArtifactResult {
-                    path: artifact.path.clone(),
-                    format,
-                    size_bytes: artifact.size_bytes,
-                    classifications: visit.classifications,
-                    failure: None,
-                }))
+                match visit.stop {
+                    StopReason::EndOfInput => {
+                        Ok(Some(ArtifactResult {
+                            path: artifact.path.clone(),
+                            format,
+                            size_bytes: artifact.size_bytes,
+                            classifications: visit.classifications,
+                            failure: None,
+                        }))
+                    }
+                    StopReason::Error(err) => {
+                        Ok(Some(ArtifactResult {
+                            path: artifact.path.clone(),
+                            format,
+                            size_bytes: artifact.size_bytes,
+                            classifications: Vec::new(),
+                            failure: Some(Failure { stage: "classify_artifact", message: err }),
+                        }))
+                    }
+                }
             }
 
             Err(_) if self.cancellation.is_cancelled() => Ok(None),

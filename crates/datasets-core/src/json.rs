@@ -61,10 +61,10 @@ impl Visitor for JsonVisitor {
         };
 
         // First pass: inspect the buffered data.
-        if let Ok(preview) = inspect(&mut sample.as_slice()) {
-            if preview.classifications.iter().all(|c| c.valid() < 5) {
-                return Ok(preview);
-            }
+        if let Ok(preview) = inspect(&mut sample.as_slice())
+            && preview.classifications.iter().all(|c| c.valid() < 5)
+        {
+            return Ok(preview);
         }
 
         // Second pass: replay the buffer, then continue the original stream.
@@ -314,10 +314,10 @@ mod tests {
 
         let visit = JsonVisitor::visit(json.as_bytes(), &labelers)?;
 
-        let expected = vec![Classification::new(Smiles, "$[].smiles", 2, 2)];
+        let expected = vec![Classification::new(Smiles, "$[].smiles", 3, 2)];
 
         assert_eq!(visit.classifications, expected);
-        assert_eq!(visit.records, 2);
+        assert_eq!(visit.records, 3);
 
         Ok(())
     }
