@@ -84,8 +84,6 @@ pub struct RepositorySummary {
     pub id: String,
     /// URL of the dataset location
     pub url: String,
-    /// Combined metadata used for text filtering
-    pub searchable_metadata: String,
 }
 
 /// File available for inspection within remote dataset

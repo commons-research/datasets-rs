@@ -9,7 +9,6 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/commons-research/datasets-rs"
 
-
 [workspace.dependencies]
 thiserror = "2.0.21"
 tracing = "0.1.44"

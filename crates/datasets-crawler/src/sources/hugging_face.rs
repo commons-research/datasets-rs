@@ -158,27 +158,9 @@ fn is_eligible(dataset: &DatasetInfo) -> bool {
 
 /// Converts Hugging Face metadata into source-independent dataset metadata
 fn dataset_summary(dataset: &DatasetInfo) -> RepositorySummary {
-    let mut searchable_metadata = dataset.id.clone();
-
-    if let Some(description) = &dataset.description {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(description);
-    }
-
-    if let Some(tags) = &dataset.tags {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(&tags.join(" "));
-    }
-
-    if let Some(card_data) = &dataset.card_data {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(&card_data.to_string());
-    }
-
     RepositorySummary {
         id: dataset.id.clone(),
         url: format!("https://huggingface.co/datasets/{}", dataset.id),
-        searchable_metadata,
     }
 }
 
