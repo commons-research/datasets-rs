@@ -235,12 +235,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             }
         };
 
-        info!(
-            repository = %repository.id,
-            artifact = %artifact.path,
-            "classifying artifact"
-        );
-
         let reader = super::reader::BlockingReader::new(
             stream,
             self.cancellation,
@@ -262,45 +256,32 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             "artifact inspection finished"
         );
 
-        match result {
+        let make_result = |classifications, failure| {
+            ArtifactResult {
+                path: artifact.path.clone(),
+                format,
+                size_bytes: artifact.size_bytes,
+                classifications,
+                failure,
+            }
+        };
+
+        let failed = |stage, message| make_result(Vec::new(), Some(Failure { stage, message }));
+        let result = match result {
             Ok(visit) => {
                 match visit.stop {
-                    StopReason::EndOfInput => {
-                        Ok(Some(ArtifactResult {
-                            path: artifact.path.clone(),
-                            format,
-                            size_bytes: artifact.size_bytes,
-                            classifications: visit.classifications,
-                            failure: None,
-                        }))
-                    }
-                    StopReason::Error(err) => {
-                        Ok(Some(ArtifactResult {
-                            path: artifact.path.clone(),
-                            format,
-                            size_bytes: artifact.size_bytes,
-                            classifications: Vec::new(),
-                            failure: Some(Failure { stage: "classify_artifact", message: err }),
-                        }))
-                    }
+                    StopReason::EndOfInput => Ok(visit.classifications),
+                    StopReason::Error(error) => Err(error),
                 }
             }
+            Err(_) if self.cancellation.is_cancelled() => return Ok(None),
+            Err(error) => Err(error.to_string()),
+        };
 
-            Err(_) if self.cancellation.is_cancelled() => Ok(None),
-
-            Err(error) => {
-                Ok(Some(ArtifactResult {
-                    path: artifact.path.clone(),
-                    format,
-                    size_bytes: artifact.size_bytes,
-                    classifications: Vec::new(),
-                    failure: Some(Failure {
-                        stage: "classify_artifact",
-                        message: error.to_string(),
-                    }),
-                }))
-            }
-        }
+        Ok(Some(match result {
+            Ok(classifications) => make_result(classifications, None),
+            Err(message) => failed("classify_artifact", message),
+        }))
     }
 }
 
