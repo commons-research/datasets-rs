@@ -190,3 +190,78 @@ fn complete_records(
     }
     Ok(&data[..complete_end])
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
+    use super::*;
+
+    #[test]
+    fn detects_named_columns_as_headers() -> Result<(), CoreError> {
+        let data = b"smiles,formula\nCCO,C2H6O\nO,H2O\n";
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert_eq!(dialect.delimiter(), b',');
+        assert!(dialect.has_headers());
+        Ok(())
+    }
+
+    #[test]
+    fn detects_semicolon_separated_headers() -> Result<(), CoreError> {
+        let data = b"name;smiles;formula\nethanol;CCO;C2H6O\nwater;O;H2O\n";
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert_eq!(dialect.delimiter(), b';');
+        assert!(dialect.has_headers());
+        Ok(())
+    }
+
+    #[test]
+    fn detects_single_column_header() -> Result<(), CoreError> {
+        let data = b"smiles\nCCO\nCCN\n";
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert!(dialect.has_headers());
+        Ok(())
+    }
+
+    #[test]
+    fn detects_numeric_data_without_headers() -> Result<(), CoreError> {
+        let data = b"12,34\n56,78\n90,12\n";
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert!(!dialect.has_headers());
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_treat_smiles_values_as_column_headers() -> Result<(), CoreError> {
+        let data = b"CCO,C2H6O\nCCN,C2H7N\nO,H2O\n";
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert!(!dialect.has_headers(), "first row contains data, not column names");
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_treat_single_column_smiles_as_header() -> Result<(), CoreError> {
+        let data = b"CCO\nCCN\nC1CCCCC1\n";
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert!(!dialect.has_headers(), "first SMILES value is not a header");
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_treat_license_text_as_header() -> Result<(), CoreError> {
+        let data = b"Copyright 2026, Example Institute\n\
+Permission is hereby granted, free of charge\n\
+The software is provided without warranty\n";
+
+        let dialect = TabularDialect::detect_sample(data, false)?;
+
+        assert!(!dialect.has_headers(), "ordinary prose should not be a header");
+        Ok(())
+    }
+}
