@@ -1,7 +1,6 @@
-
-
 use std::collections::VecDeque;
-use futures::{stream, AsyncRead,Stream,TryStreamExt};
+
+use futures::{AsyncRead, Stream, TryStreamExt, stream};
 use zenodo_rs::{ArtifactSelector, Record, RecordId, RecordQuery, ZenodoClient, ZenodoError};
 
 use super::super::{
@@ -29,35 +28,45 @@ impl ZenodoSource {
 }
 
 impl DatasetSource for ZenodoSource {
-    async fn discover_datasets<'a>(
-        &'a self,
-    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError> {
-        let repositories = stream::try_unfold((
-            self.client.clone(),
-            1_u32,
-            VecDeque::<RepositorySummary>::new(),
-            false,
-        ), |(client, page_number, mut pending, finished)| async move {
-            if let Some(repository) = pending.pop_front() {
-                return Ok::<_, ZenodoError>(Seom((
-                    repository,
-                    (client, page_number, pending, finished),
-                )));
-            }
-            if finished {
-                return Ok(None);
-            }
+    fn discover_datasets(
+        &self,
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError>
+    {
+        let repositories = stream::try_unfold(
+            (self.client.clone(), 1_u32, VecDeque::<RepositorySummary>::new(), false),
+            |(client, page_number, mut pending, finished)| {
+                async move {
+                    if let Some(repository) = pending.pop_front() {
+                        return Ok::<_, ZenodoError>(Some((
+                            repository,
+                            (client, page_number, pending, finished),
+                        )));
+                    }
 
-            let query = RecordQuery::builder().published().most_recent().page(page_number).size(PAGE_SIZE).build();
+                    if finished {
+                        return Ok(None);
+                    }
 
-            let page = client.search_records(&query).await?;
-            let finished = page.hits.len() < PAGE_SIZE as usize;
+                    let query = RecordQuery::builder()
+                        .published()
+                        .most_recent()
+                        .page(page_number)
+                        .size(PAGE_SIZE)
+                        .build();
 
-            let mut pending = page.hits.into_iter().map(dataset_summary).collect::<VecDeque<_>>();
- Ok(Some((
-                    repository,
-                    (client, page_number + 1, pending, finished),
-                )))
+                    let page = client.search_records(&query).await?;
+
+                    let finished = page.hits.len() < PAGE_SIZE as usize;
+
+                    let mut pending =
+                        page.hits.iter().map(dataset_summary).collect::<VecDeque<_>>();
+
+                    let Some(repository) = pending.pop_front() else {
+                        return Ok(None);
+                    };
+
+                    Ok(Some((repository, (client, page_number + 1, pending, finished))))
+                }
             },
         )
         .map_err(CrawlerError::Zenodo);
@@ -70,10 +79,7 @@ impl DatasetSource for ZenodoSource {
         dataset_id: &'a str,
     ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let record_id = parse_record_id(dataset_id)?;
-        debug!(
-            dataset_id = %dataset_id,
-            "requesting Zenodo record files"
-        );
+
         let files = self.client.list_record_files(record_id).await?;
 
         Ok(files
@@ -82,143 +88,29 @@ impl DatasetSource for ZenodoSource {
             .collect())
     }
 
-    async fn download_artifact(
-        &self,
-        dataset_id: &str,
-        artifact: &SourceArtifact,
-    ) -> Result<Vec<u8>, CrawlerError> {
-        let record_id = parse_record_id(dataset_id)?;
-
-        debug!(
-            dataset_id = %dataset_id,
-            artifact_path = %artifact.path,
-            "requesting Zenodo artifact download"
-        );
-
-        // Use a temporary directory so the downloaded artifact is cleaned
-        // up automatically after it has been read into memory.
-        let temp_dir = tempfile::tempdir()?;
-        let destination = temp_dir.path().join("downloaded-artifact");
-
-        let progress =
-            DownloadProgress::new(artifact.size_bytes, format!("{dataset_id}/{}", artifact.path));
-
-        let download_result = self
-            .client
-            .download_record_file_by_key_to_path_with_progress(
-                record_id,
-                &artifact.path,
-                &destination,
-                progress.progress_bar(),
-            )
-            .await;
-
-        match download_result {
-            Ok(_) => {
-                progress.finish_with_message(format!(
-                    "Downloaded Zenodo record {dataset_id}/{}",
-                    artifact.path
-                ));
-            }
-            Err(error) => {
-                progress.abandon_with_message(format!(
-                    "Download failed: {dataset_id}/{}",
-                    artifact.path
-                ));
-                return Err(error.into());
-            }
-        }
-
-        let bytes = tokio::fs::read(&destination).await?;
-
-        debug!(
-            dataset_id = %dataset_id,
-            artifact_path = %artifact.path,
-            downloaded_bytes = bytes.len(),
-            "loaded downloaded Zenodo artifact into memory"
-        );
-
-        Ok(bytes)
-    }
-    
-    fn open_artifact<'a>(
+    async fn open_artifact<'a>(
         &'a self,
         dataset_id: &'a str,
         artifact: &'a SourceArtifact,
-    ) -> impl Future<Output = Result<impl futures::prelude::AsyncRead + Send + Unpin + 'a, CrawlerError>> + Send + 'a {
-        todo!()
+    ) -> Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError> {
+        let record_id = parse_record_id(dataset_id)?;
+        let selector = ArtifactSelector::file(record_id, artifact.path.clone());
+
+        let download = self.client.open_artifact(&selector).await?;
+
+        Ok(download.stream.map_err(std::io::Error::other).into_async_read())
     }
-    
+
     fn provider(&self) -> &'static str {
-        todo!()
+        "zenodo"
     }
 }
 
 /// Converts a Zenodo record into metadata.
-fn dataset_summary(record: &Record) -> DatasetSummary {
+fn dataset_summary(record: &Record) -> RepositorySummary {
     let id = record.id.to_string();
-    let metadata = &record.metadata;
 
-    let mut searchable_metadata = metadata.title.clone();
-
-    if let Some(description) = &metadata.description_html {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(description);
-    }
-
-    if !metadata.keywords.is_empty() {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(&metadata.keywords.join(" "));
-    }
-
-    if !metadata.formats.is_empty() {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(&metadata.formats.join(" "));
-    }
-
-    if let Some(notes) = &metadata.notes {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(notes);
-    }
-
-    if let Some(journal_title) = &metadata.journal_title {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(journal_title);
-    }
-
-    if let Some(conference_title) = &metadata.conference_title {
-        searchable_metadata.push(' ');
-        searchable_metadata.push_str(conference_title);
-    }
-
-    DatasetSummary {
-        id: id.clone(),
-        url: format!("https://zenodo.org/records/{id}"),
-        searchable_metadata,
-    }
-}
-
-/// Checks whether a record's file metadata matches the requested formats.
-///
-/// Records without embedded file metadata are retained rather than rejected;
-/// their actual files can be inspected by the crawler afterward.
-fn record_matches_formats(record: &Record, formats: &[FileFormat]) -> bool {
-    formats.is_empty()
-        || record.files.is_empty()
-        || record.files.iter().any(|file| file_matches_formats(&file.key, formats))
-}
-
-/// Checks a file's extension against the requested formats.
-fn file_matches_formats(path: &str, formats: &[FileFormat]) -> bool {
-    if formats.is_empty() {
-        return true;
-    }
-
-    let Some(extension) = Path::new(path).extension().and_then(|value| value.to_str()) else {
-        return false;
-    };
-
-    formats.iter().any(|format| extension.eq_ignore_ascii_case(format.as_str()))
+    RepositorySummary { id: id.clone(), url: format!("https://zenodo.org/records/{id}") }
 }
 
 /// Parses the numeric Zenodo record identifier used by this source.
@@ -234,19 +126,17 @@ fn parse_record_id(dataset_id: &str) -> Result<RecordId, CrawlerError> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::missing_panics_doc)]
+    use zenodo_rs::RecordId;
 
-    use super::*;
+    use super::{CrawlerError, parse_record_id};
 
     #[test]
-    fn matches_requested_file_extensions() {
-        assert!(file_matches_formats("data.csv", &[FileFormat::Csv]));
-        assert!(file_matches_formats("data.json", &[FileFormat::Json]));
-        assert!(file_matches_formats("data.CSV", &[FileFormat::Csv]));
+    fn parses_numeric_record_id() {
+        assert!(matches!(parse_record_id("123"), Ok(RecordId(123))));
     }
 
     #[test]
-    fn rejects_unsupported_file_extensions() {
-        assert!(!file_matches_formats("README", &[FileFormat::Csv, FileFormat::Json]));
+    fn rejects_invalid_record_id() {
+        assert!(matches!(parse_record_id("invalid"), Err(CrawlerError::InvalidZenodoRecordId(_))));
     }
 }
