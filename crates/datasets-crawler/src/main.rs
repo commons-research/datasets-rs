@@ -20,7 +20,7 @@ use tracing_subscriber::EnvFilter;
 use self::cli::ResolvedArgs;
 
 /// Longest an artifact stream may stall before being abandoned.
-const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+const STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs the dataset crawler.
 ///

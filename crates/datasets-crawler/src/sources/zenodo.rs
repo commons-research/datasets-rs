@@ -1,15 +1,16 @@
 
 
-use std::path::Path;
-
-use tracing::debug;
-use zenodo_rs::{Record, RecordId, RecordQuery, ZenodoClient};
+use std::collections::VecDeque;
+use futures::{stream, AsyncRead,Stream,TryStreamExt};
+use zenodo_rs::{ArtifactSelector, Record, RecordId, RecordQuery, ZenodoClient, ZenodoError};
 
 use super::super::{
     error::CrawlerError,
-    progress::DownloadProgress,
-    source::{DatasetSource, DatasetSummary, FileFormat, SourceArtifact},
+    source::{DatasetSource, RepositorySummary, SourceArtifact},
 };
+
+/// Number of records to request from Zenodo per search page.
+const PAGE_SIZE: u32 = 20;
 
 /// Source for discovering public datasets from Zenodo
 pub struct ZenodoSource {
@@ -30,76 +31,38 @@ impl ZenodoSource {
 impl DatasetSource for ZenodoSource {
     async fn discover_datasets<'a>(
         &'a self,
-        query: Option<&'a str>,
-        limit: Option<usize>,
-    ) -> Result<Vec<DatasetSummary>, CrawlerError> {
-        const PAGE_SIZE: u32 = 20;
-        let search_query = match query {
-            Some(term) => term,
-            None => "none",
-        };
-        debug!(
-            query = %search_query,
-            limit = ?limit,
-            "querying Zenodo record search"
-        );
-
-        let mut datasets = Vec::new();
-        let mut page_number = 1;
-
-        loop {
-            if limit.is_some_and(|maximum| datasets.len() >= maximum) {
-                break;
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError> {
+        let repositories = stream::try_unfold((
+            self.client.clone(),
+            1_u32,
+            VecDeque::<RepositorySummary>::new(),
+            false,
+        ), |(client, page_number, mut pending, finished)| async move {
+            if let Some(repository) = pending.pop_front() {
+                return Ok::<_, ZenodoError>(Seom((
+                    repository,
+                    (client, page_number, pending, finished),
+                )));
+            }
+            if finished {
+                return Ok(None);
             }
 
-            let page_size = limit.map_or(PAGE_SIZE, |maximum| {
-                let remaining = maximum.saturating_sub(datasets.len());
-                u32::try_from(remaining).map_or(PAGE_SIZE, |remaining| remaining.min(PAGE_SIZE))
-            });
+            let query = RecordQuery::builder().published().most_recent().page(page_number).size(PAGE_SIZE).build();
 
-            let record_query = RecordQuery::builder()
-                .published()
-                .most_recent()
-                .page(page_number)
-                .size(page_size)
-                .build();
+            let page = client.search_records(&query).await?;
+            let finished = page.hits.len() < PAGE_SIZE as usize;
 
-            let page = self.client.search_records(&record_query).await?;
-            let records = page.hits;
-            let records_on_page = records.len();
+            let mut pending = page.hits.into_iter().map(dataset_summary).collect::<VecDeque<_>>();
+ Ok(Some((
+                    repository,
+                    (client, page_number + 1, pending, finished),
+                )))
+            },
+        )
+        .map_err(CrawlerError::Zenodo);
 
-            if records.is_empty() {
-                break;
-            }
-
-            for record in records {
-                if record_matches_formats(&record, formats) {
-                    datasets.push(dataset_summary(&record));
-                }
-
-                if limit.is_some_and(|maximum| datasets.len() >= maximum) {
-                    break;
-                }
-            }
-
-            if limit.is_some_and(|maximum| datasets.len() >= maximum) {
-                break;
-            }
-
-            if u32::try_from(records_on_page).is_ok_and(|count| count < page_size) {
-                break;
-            }
-
-            page_number += 1;
-        }
-
-        debug!(
-            query = %search_query,
-            matching_datasets = datasets.len(),
-            "finished Zenodo record search"
-        );
-
-        Ok(datasets)
+        Ok(repositories)
     }
 
     async fn list_artifacts<'a>(
@@ -176,6 +139,18 @@ impl DatasetSource for ZenodoSource {
         );
 
         Ok(bytes)
+    }
+    
+    fn open_artifact<'a>(
+        &'a self,
+        dataset_id: &'a str,
+        artifact: &'a SourceArtifact,
+    ) -> impl Future<Output = Result<impl futures::prelude::AsyncRead + Send + Unpin + 'a, CrawlerError>> + Send + 'a {
+        todo!()
+    }
+    
+    fn provider(&self) -> &'static str {
+        todo!()
     }
 }
 
