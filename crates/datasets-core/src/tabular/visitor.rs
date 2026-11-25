@@ -322,4 +322,27 @@ water;O;H2O
 
         Ok(())
     }
+
+
+#[test]
+fn preserves_first_record_in_headerless_smiles_data() -> Result<(), CoreError> {
+    let data = "CCO\nCCN\nO\n";
+    let labelers: [&dyn Labeler; 1] = [&SmilesLabeler];
+
+    let visit = TabularVisitor::visit(data.as_bytes(), &labelers)?;
+
+    assert_eq!(
+        visit.records, 3,
+        "all three SMILES values should be inspected"
+    );
+
+    assert_eq!(
+        visit.classifications,
+        vec![Classification::new(Smiles, "column_0", 3, 3)],
+        "the first SMILES must not become a column name"
+    );
+
+    Ok(())
+}
+
 }
