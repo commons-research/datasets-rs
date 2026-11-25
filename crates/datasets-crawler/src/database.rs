@@ -176,7 +176,7 @@ impl Database {
                     (repository_id, artifact_id, stage, message)
                 VALUES (?1, ?2, ?3, ?4)
                 ",
-                    params![repository_id, artifact_id, failure.stage, &failure.message,],
+                    params![repository_id, artifact_id, failure.stage.to_string(), &failure.message,],
                 )?;
             }
         }
@@ -187,7 +187,7 @@ impl Database {
             INSERT INTO failure (repository_id, stage, message)
             VALUES (?1, ?2, ?3)
             ",
-                params![repository_id, failure.stage, &failure.message],
+                params![repository_id, failure.stage.to_string(), &failure.message],
             )?;
         }
 

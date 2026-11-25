@@ -1,10 +1,14 @@
-use std::time::{Duration, Instant};
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 
 use datasets_core::{ArtifactFormat, Classification, ContentType, StopReason, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+use self::Stage::{ClassifyArtifact, ListArtifacts, OpenArtifact};
 use crate::{
     CrawlerError,
     database::Database,
@@ -155,7 +159,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                                 repository: repository.clone(),
                                 artifacts: Vec::new(),
                                 failures: vec![Failure {
-                                    stage: "list_artifacts",
+                                    stage: ListArtifacts,
                                     message: error.to_string(),
                                 }],
                             }));
@@ -230,7 +234,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                             size_bytes: artifact.size_bytes,
                             classifications: Vec::new(),
                             failure: Some(Failure {
-                                stage: "open_artifact",
+                                stage: OpenArtifact,
                                 message: error.to_string(),
                             }),
                         }));
@@ -277,14 +281,14 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 let failure = match visit.stop {
                     StopReason::EndOfInput => None,
                     StopReason::Error(error) => {
-                        Some(Failure { stage: "classify_artifact", message: error.to_string() })
+                        Some(Failure { stage: ClassifyArtifact, message: error.to_string() })
                     }
                 };
 
                 make_result(visit.classifications, failure)
             }
             Err(_) if self.cancellation.is_cancelled() => return Ok(None),
-            Err(error) => failed("classify_artifact", error.to_string()),
+            Err(error) => failed(ClassifyArtifact, error.to_string()),
         };
 
         Ok(Some(result))
@@ -329,7 +333,24 @@ pub struct ArtifactResult {
 /// A repository- or artifact-level failure.
 pub struct Failure {
     /// Operation that failed.
-    pub stage: &'static str,
+    pub stage: Stage,
     /// Error description.
     pub message: String,
+}
+
+/// Enum for representing the stage of a Crawl.
+pub enum Stage {
+    ListArtifacts,
+    OpenArtifact,
+    ClassifyArtifact,
+}
+
+impl fmt::Display for Stage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Stage::ListArtifacts => write!(f, "list artifacts"),
+            Stage::OpenArtifact => write!(f, "open artifact"),
+            Stage::ClassifyArtifact => write!(f, "classify artifact"),
+        }
+    }
 }
