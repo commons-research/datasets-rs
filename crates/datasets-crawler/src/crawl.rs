@@ -146,7 +146,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                     return Ok(None);
                 }
 
-                result = self.source.list_artifacts(&repository.id) => {
+                result = self.source.list_artifacts(&repository.id, self.config.formats.as_deref()) => {
                     match result {
                         Ok(artifacts) => artifacts,
                         Err(error) => {

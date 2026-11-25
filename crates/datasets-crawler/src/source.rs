@@ -110,13 +110,15 @@ pub trait DatasetSource: Send + Sync {
     /// Parameters:
     /// - `dataset_id`: Identifier of the dataset whose artifacts should be
     ///   listed.
+    /// - `formats`: The file formats that should be inspected. 
     ///
     /// # Errors
     /// - Returns an error if artifact listing fails.
     fn list_artifacts<'a>(
         &'a self,
-        dataset_id: &'a str,
-    ) -> impl Future<Output = Result<Vec<SourceArtifact>, CrawlerError>> + Send + 'a;
+        repository_id: &'a str,
+        formats: Option<&'a [FileFormat]>,
+    ) -> impl Stream<Item = Result<SourceArtifact, CrawlerError>> + Send + 'a;
 
     /// Opens a remote artifact for asynchronous reading.
     ///

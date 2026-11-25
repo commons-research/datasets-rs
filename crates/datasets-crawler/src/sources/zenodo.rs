@@ -3,6 +3,8 @@ use std::collections::VecDeque;
 use futures::{AsyncRead, Stream, TryStreamExt, stream};
 use zenodo_rs::{ArtifactSelector, Record, RecordId, RecordQuery, ZenodoClient, ZenodoError};
 
+use crate::FileFormat;
+
 use super::super::{
     error::CrawlerError,
     source::{DatasetSource, RepositorySummary, SourceArtifact},
@@ -77,6 +79,7 @@ impl DatasetSource for ZenodoSource {
     async fn list_artifacts<'a>(
         &'a self,
         dataset_id: &'a str,
+        formats: Option<&[FileFormat]>
     ) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let record_id = parse_record_id(dataset_id)?;
 

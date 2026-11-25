@@ -67,13 +67,9 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         "starting crawl",
     );
 
-    // Create the single cancellation token for this crawl.
     let cancellation = CancellationToken::new();
-
-    // Give the signal handler a handle to the same cancellation state.
     let signal_cancellation = cancellation.clone();
 
-    // Listen for Ctrl+C independently of the crawling operation.
     let signal_task = tokio::spawn(async move {
         match tokio::signal::ctrl_c().await {
             Ok(()) => {
@@ -89,7 +85,6 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         }
     });
 
-    // Run the selected source.
     let report_result = match selected_source {
         SourceArg::HuggingFace => {
             match HuggingFaceSource::new() {
@@ -97,7 +92,6 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
                 Err(error) => Err(error),
             }
         }
-        // update when zenodo implemented
         SourceArg::Zenodo => {
             match ZenodoSource::new() {
                 Ok(source) => crawl(&source, &mut database, &config, &cancellation).await,
@@ -106,12 +100,9 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         }
     };
 
-    // The crawl has finished; stop listening for signals.
     signal_task.abort();
 
-    let report = report_result?;
-
-    match report {
+    match report_result? {
         CrawlStatus::Completed => {
             info!("Crawl completed successfully");
         }

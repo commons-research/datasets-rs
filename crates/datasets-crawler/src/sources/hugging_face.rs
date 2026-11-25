@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::{time::{Duration, Instant}};
 
 use futures::{AsyncRead, Stream, TryStreamExt, future, pin_mut};
 use hf_hub::{
@@ -8,6 +8,8 @@ use hf_hub::{
     split_id,
 };
 use tracing::info;
+
+use crate::FileFormat;
 
 use super::super::{
     error::CrawlerError,
@@ -51,7 +53,7 @@ impl DatasetSource for HuggingFaceSource {
         Ok(stream)
     }
 
-    async fn list_artifacts(&self, dataset_id: &str) -> Result<Vec<SourceArtifact>, CrawlerError> {
+    async fn list_artifacts(&self, dataset_id: &str, formats: Option<&[FileFormat]>) -> Result<Vec<SourceArtifact>, CrawlerError> {
         let started = Instant::now();
 
         info!(repository = dataset_id, "starting repository tree listing");
