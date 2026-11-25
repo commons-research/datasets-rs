@@ -80,6 +80,10 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
     /// # Errors
     /// - Returns [`CrawlerError`] when failing to interact with repository.
     async fn run_repositories(&mut self, run_id: i64) -> Result<CrawlStatus, CrawlerError> {
+        if self.config.max_repositories == Some(0) {
+            return Ok(CrawlStatus::Completed);
+        }
+
         let mut repositories_crawled = 0usize;
 
         let repositories = self.source.discover_datasets()?;
@@ -267,21 +271,23 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         };
 
         let failed = |stage, message| make_result(Vec::new(), Some(Failure { stage, message }));
+
         let result = match result {
             Ok(visit) => {
-                match visit.stop {
-                    StopReason::EndOfInput => Ok(visit.classifications),
-                    StopReason::Error(error) => Err(error),
-                }
+                let failure = match visit.stop {
+                    StopReason::EndOfInput => None,
+                    StopReason::Error(error) => {
+                        Some(Failure { stage: "classify_artifact", message: error.to_string() })
+                    }
+                };
+
+                make_result(visit.classifications, failure)
             }
             Err(_) if self.cancellation.is_cancelled() => return Ok(None),
-            Err(error) => Err(error.to_string()),
+            Err(error) => failed("classify_artifact", error.to_string()),
         };
 
-        Ok(Some(match result {
-            Ok(classifications) => make_result(classifications, None),
-            Err(message) => failed("classify_artifact", message),
-        }))
+        Ok(Some(result))
     }
 }
 

@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use datasets_crawler::{
-    CrawlConfig, CrawlStatus, CrawlerError, Database, HuggingFaceSource, crawl,
+    CrawlConfig, CrawlStatus, CrawlerError, Database, HuggingFaceSource, ZenodoSource, crawl,
 };
 
 /// Command-line configuration.
@@ -20,7 +20,7 @@ use tracing_subscriber::EnvFilter;
 use self::cli::ResolvedArgs;
 
 /// Longest an artifact stream may stall before being abandoned.
-const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+const STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs the dataset crawler.
 ///
@@ -98,7 +98,12 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
             }
         }
         // update when zenodo implemented
-        SourceArg::Zenodo => return Ok(()),
+        SourceArg::Zenodo => {
+            match ZenodoSource::new() {
+                Ok(source) => crawl(&source, &mut database, &config, &cancellation).await,
+                Err(error) => Err(error),
+            }
+        }
     };
 
     // The crawl has finished; stop listening for signals.

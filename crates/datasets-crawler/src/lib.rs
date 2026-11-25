@@ -19,5 +19,4 @@ pub use crawl::{CrawlConfig, CrawlStatus, crawl};
 pub use database::Database;
 pub use error::CrawlerError;
 pub use source::{DatasetSource, FileFormat, RepositorySummary, SourceArtifact};
-// pub use sources::{HuggingFaceSource, ZenodoSource};
-pub use sources::HuggingFaceSource;
+pub use sources::{HuggingFaceSource, ZenodoSource};
