@@ -50,27 +50,36 @@ impl DatasetSource for HuggingFaceSource {
         Ok(stream)
     }
 
-    fn list_artifacts<'a>(
-        &'a self,
-        repository_id: &'a str,
-    ) -> impl Stream<Item = Result<SourceArtifact, CrawlerError>> + Send + 'a {
-        async_stream::try_stream! {
-            let (owner, name) = split_id(repository_id);
-            let dataset = self.client.dataset(owner, name);
 
-            let entries = dataset.list_tree().recursive(true).send()?;
-            pin_mut!(entries);
+fn list_artifacts<'a>(
+    &'a self,
+    repository_id: &'a str,
+) -> impl Stream<Item = Result<SourceArtifact, CrawlerError>> + Send + 'a {
+    async_stream::try_stream! {
+        let (owner, name) = split_id(repository_id);
+        let dataset = self.client.dataset(owner, name);
 
-            while let Some(entry) = entries.try_next().await? {
-                if let RepoTreeEntry::File { path, size, .. } = entry {
-                    yield SourceArtifact {
-                        path,
-                        size_bytes: size,
-                    };
-                }
+        let entries = dataset.list_tree().recursive(true).send()?;
+        pin_mut!(entries);
+
+        let mut entries_seen = 0usize;
+
+        while let Some(entry) = entries.try_next().await? {
+            entries_seen += 1;
+
+            if let RepoTreeEntry::File { path, size, .. } = entry {
+                yield SourceArtifact {
+                    path,
+                    size_bytes: size,
+                };
+            }
+            // ad hoc ensuring HF limits
+            if entries_seen.is_multiple_of(1000) {
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
     }
+}
 
     async fn open_artifact<'a>(
         &'a self,
