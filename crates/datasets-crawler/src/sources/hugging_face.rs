@@ -1,4 +1,4 @@
-use std::{time::{Duration, Instant}};
+use std::time::Duration;
 
 use futures::{AsyncRead, Stream, TryStreamExt, future, pin_mut};
 use hf_hub::{
@@ -7,9 +7,6 @@ use hf_hub::{
     repository::{DatasetInfo, RepoTreeEntry},
     split_id,
 };
-use tracing::info;
-
-use crate::FileFormat;
 
 use super::super::{
     error::CrawlerError,
@@ -53,55 +50,26 @@ impl DatasetSource for HuggingFaceSource {
         Ok(stream)
     }
 
-    async fn list_artifacts(&self, dataset_id: &str, formats: Option<&[FileFormat]>) -> Result<Vec<SourceArtifact>, CrawlerError> {
-        let started = Instant::now();
+    fn list_artifacts<'a>(
+        &'a self,
+        repository_id: &'a str,
+    ) -> impl Stream<Item = Result<SourceArtifact, CrawlerError>> + Send + 'a {
+        async_stream::try_stream! {
+            let (owner, name) = split_id(repository_id);
+            let dataset = self.client.dataset(owner, name);
 
-        info!(repository = dataset_id, "starting repository tree listing");
+            let entries = dataset.list_tree().recursive(true).send()?;
+            pin_mut!(entries);
 
-        let (owner, name) = split_id(dataset_id);
-        let dataset = self.client.dataset(owner, name);
-
-        let entries = dataset.list_tree().recursive(true).send()?;
-        pin_mut!(entries);
-
-        let mut entries_seen = 0usize;
-        let mut artifacts = Vec::new();
-
-        while let Some(entry) = entries.try_next().await? {
-            entries_seen += 1;
-
-            if let RepoTreeEntry::File { path, size, .. } = entry {
-                artifacts.push(SourceArtifact { path, size_bytes: size });
-            }
-            if entries_seen >= 100 {
-                info!(
-                    repository = dataset_id,
-                    entries = entries_seen,
-                    files = artifacts.len(),
-                    "repository tree listing limit reached"
-                );
-                break;
-            }
-            if entries_seen.is_multiple_of(1000) {
-                info!(
-                    repository = dataset_id,
-                    entries = entries_seen,
-                    elapsed_secs = started.elapsed().as_secs(),
-                    "gathering repository tree"
-                );
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+            while let Some(entry) = entries.try_next().await? {
+                if let RepoTreeEntry::File { path, size, .. } = entry {
+                    yield SourceArtifact {
+                        path,
+                        size_bytes: size,
+                    };
+                }
             }
         }
-
-        info!(
-            repository = dataset_id,
-            entries = entries_seen,
-            files = artifacts.len(),
-            elapsed_secs = started.elapsed().as_secs(),
-            "repository tree listing completed"
-        );
-
-        Ok(artifacts)
     }
 
     async fn open_artifact<'a>(

@@ -3,7 +3,10 @@ use std::path::Path;
 
 use rusqlite::{Connection, Transaction, params};
 
-use crate::{CrawlerError, crawl::RepositoryResult};
+use super::{
+    CrawlerError,
+    crawl::{ArtifactResult, Failure, RepositoryResult},
+};
 
 /// Manages database storage of crawler results.
 pub struct Database {
@@ -140,55 +143,11 @@ impl Database {
         )?;
 
         for artifact in &result.artifacts {
-            let artifact_id: i64 = insert_and_return_artifact_id(
-                &tx,
-                repository_id,
-                &artifact.path,
-                &artifact.format.to_string(),
-                artifact.size_bytes,
-            )?;
-
-            tx.execute("DELETE FROM classification WHERE artifact_id = ?1", [artifact_id])?;
-
-            for classification in
-                artifact.classifications.iter().filter(|classification| classification.valid() > 0)
-            {
-                tx.execute(
-                    "
-                INSERT INTO classification
-                    (artifact_id, content_type, location, inspected, valid)
-                VALUES (?1, ?2, ?3, ?4, ?5)
-                ",
-                    params![
-                        artifact_id,
-                        classification.content_type().to_string(),
-                        classification.location(),
-                        i64::try_from(classification.inspected())?,
-                        i64::try_from(classification.valid())?,
-                    ],
-                )?;
-            }
-
-            if let Some(failure) = &artifact.failure {
-                tx.execute(
-                    "
-                INSERT INTO failure
-                    (repository_id, artifact_id, stage, message)
-                VALUES (?1, ?2, ?3, ?4)
-                ",
-                    params![repository_id, artifact_id, failure.stage.to_string(), &failure.message,],
-                )?;
-            }
+            save_artifact(&tx, repository_id, artifact)?;
         }
 
         for failure in &result.failures {
-            tx.execute(
-                "
-            INSERT INTO failure (repository_id, stage, message)
-            VALUES (?1, ?2, ?3)
-            ",
-                params![repository_id, failure.stage.to_string(), &failure.message],
-            )?;
+            insert_failure(&tx, repository_id, None, failure)?;
         }
 
         let completed = result.failures.is_empty()
@@ -219,6 +178,73 @@ impl Database {
 
         Ok(())
     }
+}
+
+/// Saves an artifact and its classification results.
+///
+/// # Errors
+/// - Returns an error if a database operation fails.
+fn save_artifact(
+    tx: &Transaction<'_>,
+    repository_id: i64,
+    artifact: &ArtifactResult,
+) -> Result<(), CrawlerError> {
+    let artifact_id = insert_and_return_artifact_id(
+        tx,
+        repository_id,
+        &artifact.path,
+        &artifact.format.to_string(),
+        artifact.size_bytes,
+    )?;
+
+    tx.execute("DELETE FROM classification WHERE artifact_id = ?1", [artifact_id])?;
+
+    for classification in
+        artifact.classifications.iter().filter(|classification| classification.valid() > 0)
+    {
+        tx.execute(
+            "
+            INSERT INTO classification
+                (artifact_id, content_type, location, inspected, valid)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ",
+            params![
+                artifact_id,
+                classification.content_type().to_string(),
+                classification.location(),
+                i64::try_from(classification.inspected())?,
+                i64::try_from(classification.valid())?,
+            ],
+        )?;
+    }
+
+    if let Some(failure) = &artifact.failure {
+        insert_failure(tx, repository_id, Some(artifact_id), failure)?;
+    }
+
+    Ok(())
+}
+
+/// Records a repository-level or artifact-level failure.
+///
+/// # Errors
+/// - Returns an error if the insertion fails.
+fn insert_failure(
+    tx: &Transaction<'_>,
+    repository_id: i64,
+    artifact_id: Option<i64>,
+    failure: &Failure,
+) -> Result<(), CrawlerError> {
+    tx.execute(
+        "
+        INSERT INTO failure
+            (repository_id, artifact_id, stage, message)
+        VALUES (?1, ?2, ?3, ?4)
+        ",
+        params![repository_id, artifact_id, failure.stage.to_string(), &failure.message,],
+    )?;
+
+    Ok(())
 }
 
 /// Creates and retrieves the repository's ID

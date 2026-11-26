@@ -6,7 +6,7 @@ use std::{
 use datasets_core::{ArtifactFormat, Classification, ContentType, StopReason, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::info;
 
 use self::Stage::{ClassifyArtifact, ListArtifacts, OpenArtifact};
 use crate::{
@@ -139,34 +139,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         &self,
         repository: &RepositorySummary,
     ) -> Result<Option<RepositoryResult>, CrawlerError> {
-        let artifacts = tokio::select! {
-                biased;
-
-                () = self.cancellation.cancelled() => {
-                    return Ok(None);
-                }
-
-                result = self.source.list_artifacts(&repository.id, self.config.formats.as_deref()) => {
-                    match result {
-                        Ok(artifacts) => artifacts,
-                        Err(error) => {
-                                warn!(
-            repository = %repository.id,
-            error = %error,
-            "repository tree listing failed"
-        );
-                            return Ok(Some(RepositoryResult {
-                                repository: repository.clone(),
-                                artifacts: Vec::new(),
-                                failures: vec![Failure {
-                                    stage: ListArtifacts,
-                                    message: error.to_string(),
-                                }],
-                            }));
-                        }
-                    }
-                }
-            };
+        let artifacts = self.source.list_artifacts(&repository.id);
+        pin_mut!(artifacts);
 
         let mut result = RepositoryResult {
             repository: repository.clone(),
@@ -174,19 +148,31 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             failures: Vec::new(),
         };
 
-        let supported: Vec<_> = artifacts
-            .into_iter()
-            .filter_map(|artifact| {
-                select_artifact_format(&artifact.path, self.config).map(|format| (artifact, format))
-            })
-            .collect();
+        loop {
+            let next = tokio::select! {
+                biased;
 
-        let stride = supported.len().div_ceil(100).max(1);
+                () = self.cancellation.cancelled() => {
+                    return Ok(None);
+                }
 
-        for (artifact, format) in supported.into_iter().step_by(stride) {
-            if self.cancellation.is_cancelled() {
-                return Ok(None);
-            }
+                next = artifacts.try_next() => next,
+            };
+
+            let artifact = match next {
+                Ok(Some(artifact)) => artifact,
+                Ok(None) => break,
+                Err(error) => {
+                    result
+                        .failures
+                        .push(Failure { stage: ListArtifacts, message: error.to_string() });
+                    break;
+                }
+            };
+
+            let Some(format) = select_artifact_format(&artifact.path, self.config) else {
+                continue;
+            };
 
             match self.inspect_artifact(repository, &artifact, format).await? {
                 Some(artifact_result) => result.artifacts.push(artifact_result),
@@ -281,7 +267,7 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                 let failure = match visit.stop {
                     StopReason::EndOfInput => None,
                     StopReason::Error(error) => {
-                        Some(Failure { stage: ClassifyArtifact, message: error.to_string() })
+                        Some(Failure { stage: ClassifyArtifact, message: error })
                     }
                 };
 
@@ -340,17 +326,20 @@ pub struct Failure {
 
 /// Enum for representing the stage of a Crawl.
 pub enum Stage {
+    /// Artifacts are being listed from the data source
     ListArtifacts,
+    /// An artifact is being opened and streamed
     OpenArtifact,
+    /// Classification of an artifact is occurring
     ClassifyArtifact,
 }
 
 impl fmt::Display for Stage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Stage::ListArtifacts => write!(f, "list artifacts"),
-            Stage::OpenArtifact => write!(f, "open artifact"),
-            Stage::ClassifyArtifact => write!(f, "classify artifact"),
+            Self::ListArtifacts => write!(f, "list artifacts"),
+            Self::OpenArtifact => write!(f, "open artifact"),
+            Self::ClassifyArtifact => write!(f, "classify artifact"),
         }
     }
 }
