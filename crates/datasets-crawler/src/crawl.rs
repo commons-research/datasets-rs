@@ -343,3 +343,31 @@ impl fmt::Display for Stage {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Reason that crawling a specific repository has ceased
+pub enum RepositoryStop {
+    /// All artifacts have been perused
+    Exhausted,
+    /// No artifact formats were relevant to the required artifact format type
+    NoEligibleFormats,
+    /// The number of relevant artifact formats were low
+    LowContentYield,
+    /// Failed to resolve the repository artifact listings
+    ListingFailed
+}
+
+
+#[derive(Debug, Default)]
+struct RepositoryAssessment {
+    artifacts_seen: usize,
+    artifacts_eligible: usize,
+    artifacts_inspected: usize,
+    artifacts_matched: usize,
+}
+
+pub struct RepositoryPolicy {
+    pub min_artifacts_seen: usize,
+    pub min_artifacts_inspected: usize,
+    pub min_match_ratio: f64,
+}
