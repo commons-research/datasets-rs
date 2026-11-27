@@ -4,7 +4,7 @@ use datasets_core::ArtifactFormat;
 use futures::{AsyncRead, Stream};
 use strum::VariantArray;
 
-use super::error::CrawlerError;
+use super::{artifact::SourceArtifact, error::CrawlerError, repository::RepositorySummary};
 
 /// File format exposed by dataset source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, VariantArray)]
@@ -75,24 +75,6 @@ impl FromStr for FileFormat {
             _ => Err(CrawlerError::ParseFileFormat(s.to_owned())),
         }
     }
-}
-
-/// Metadata describing repository discovered.
-#[derive(Debug, Clone)]
-pub struct RepositorySummary {
-    /// Stable identifier assigned by source
-    pub id: String,
-    /// URL of the dataset location
-    pub url: String,
-}
-
-/// File available for inspection within remote dataset
-#[derive(Debug, Clone)]
-pub struct SourceArtifact {
-    /// Path identifying the file within source repo
-    pub path: String,
-    /// File size in bytes
-    pub size_bytes: u64,
 }
 
 /// Operations required to discover and retrieve remote datasets

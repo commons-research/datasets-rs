@@ -3,10 +3,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, Transaction, params};
 
-use super::{
-    CrawlerError,
-    crawl::{ArtifactResult, Failure, RepositoryResult},
-};
+use super::{CrawlerError, Failure, RepositoryResult, artifact::ArtifactResult};
 
 /// Manages database storage of crawler results.
 pub struct Database {

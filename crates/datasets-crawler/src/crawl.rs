@@ -1,18 +1,19 @@
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use datasets_core::{ArtifactFormat, Classification, ContentType, StopReason, classify_artifact};
+use datasets_core::{ArtifactFormat, ArtifactStopReason, ContentType, classify_artifact};
 use futures::{TryStreamExt, pin_mut};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use self::Stage::{ClassifyArtifact, ListArtifacts, OpenArtifact};
-use crate::{
-    CrawlerError,
+use super::{
+    CrawlerError, Failure, RepositoryAssessment,
+    artifact::{ArtifactResult, SourceArtifact},
     database::Database,
-    source::{DatasetSource, FileFormat, RepositorySummary, SourceArtifact},
+    repository::{
+        RepositoryPolicy, RepositoryResult, RepositoryStop, RepositorySummary,
+        Stage::{ClassifyArtifact, ListArtifacts, OpenArtifact},
+    },
+    source::{DatasetSource, FileFormat},
 };
 
 /// Configuration for a repository-independent crawl.
@@ -26,6 +27,8 @@ pub struct CrawlConfig {
     pub max_repositories: Option<usize>,
     /// Maximum time a streaming artifact may stall.
     pub stall_timeout: Duration,
+    /// Policy governing early repository termination.
+    pub repository_policy: RepositoryPolicy,
 }
 
 /// Current state of crawl
@@ -117,7 +120,6 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             info!(
                 repository = %repository.id,
                 artifacts = result.artifacts.len(),
-                failures = result.failures.len(),
                 "repository saved"
             );
 
@@ -146,7 +148,10 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             repository: repository.clone(),
             artifacts: Vec::new(),
             failures: Vec::new(),
+            stop: RepositoryStop::Exhausted,
         };
+
+        let mut assessment = RepositoryAssessment::default();
 
         loop {
             let next = tokio::select! {
@@ -166,17 +171,40 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
                     result
                         .failures
                         .push(Failure { stage: ListArtifacts, message: error.to_string() });
+                    result.stop = RepositoryStop::ListingFailed;
                     break;
                 }
             };
 
-            let Some(format) = select_artifact_format(&artifact.path, self.config) else {
-                continue;
-            };
+            assessment.artifacts_seen += 1;
 
-            match self.inspect_artifact(repository, &artifact, format).await? {
-                Some(artifact_result) => result.artifacts.push(artifact_result),
-                None => return Ok(None),
+            if let Some(format) = select_artifact_format(&artifact.path, self.config) {
+                assessment.artifacts_eligible += 1;
+
+                let Some(artifact_result) =
+                    self.inspect_artifact(repository, &artifact, format).await?
+                else {
+                    return Ok(None);
+                };
+
+                if artifact_result.failure.is_none() {
+                    assessment.artifacts_inspected += 1;
+
+                    if artifact_result
+                        .classifications
+                        .iter()
+                        .any(|classification| classification.valid() > 0)
+                    {
+                        assessment.artifacts_matched += 1;
+                    }
+                }
+
+                result.artifacts.push(artifact_result);
+            }
+
+            if let Some(stop) = assessment.assess(&self.config.repository_policy) {
+                result.stop = stop;
+                break;
             }
         }
 
@@ -265,8 +293,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
         let result = match result {
             Ok(visit) => {
                 let failure = match visit.stop {
-                    StopReason::EndOfInput => None,
-                    StopReason::Error(error) => {
+                    ArtifactStopReason::EndOfInput => None,
+                    ArtifactStopReason::Error(error) => {
                         Some(Failure { stage: ClassifyArtifact, message: error })
                     }
                 };
@@ -290,84 +318,4 @@ fn select_artifact_format(artifact_path: &str, config: &CrawlConfig) -> Option<A
     }
 
     Some(file_format.artifact_format())
-}
-
-/// Results collected while inspecting one repository.
-pub struct RepositoryResult {
-    /// Repository metadata.
-    pub repository: RepositorySummary,
-    /// Inspected artifacts.
-    pub artifacts: Vec<ArtifactResult>,
-    /// Repository-level failures.
-    pub failures: Vec<Failure>,
-}
-
-/// Results from one artifact.
-pub struct ArtifactResult {
-    /// Path of the inspected artifact.
-    pub path: String,
-    /// Format used to inspect the artifact.
-    pub format: ArtifactFormat,
-    /// Artifact size in bytes.
-    pub size_bytes: u64,
-    /// Classification evidence.
-    pub classifications: Vec<Classification>,
-    /// Failure encountered while inspecting the artifact.
-    pub failure: Option<Failure>,
-}
-
-/// A repository- or artifact-level failure.
-pub struct Failure {
-    /// Operation that failed.
-    pub stage: Stage,
-    /// Error description.
-    pub message: String,
-}
-
-/// Enum for representing the stage of a Crawl.
-pub enum Stage {
-    /// Artifacts are being listed from the data source
-    ListArtifacts,
-    /// An artifact is being opened and streamed
-    OpenArtifact,
-    /// Classification of an artifact is occurring
-    ClassifyArtifact,
-}
-
-impl fmt::Display for Stage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ListArtifacts => write!(f, "list artifacts"),
-            Self::OpenArtifact => write!(f, "open artifact"),
-            Self::ClassifyArtifact => write!(f, "classify artifact"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Reason that crawling a specific repository has ceased
-pub enum RepositoryStop {
-    /// All artifacts have been perused
-    Exhausted,
-    /// No artifact formats were relevant to the required artifact format type
-    NoEligibleFormats,
-    /// The number of relevant artifact formats were low
-    LowContentYield,
-    /// Failed to resolve the repository artifact listings
-    ListingFailed
-}
-
-
-#[derive(Debug, Default)]
-struct RepositoryAssessment {
-    artifacts_seen: usize,
-    artifacts_eligible: usize,
-    artifacts_inspected: usize,
-    artifacts_matched: usize,
-}
-
-pub struct RepositoryPolicy {
-    pub min_artifacts_seen: usize,
-    pub min_artifacts_inspected: usize,
-    pub min_match_ratio: f64,
 }

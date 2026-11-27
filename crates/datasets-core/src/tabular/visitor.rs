@@ -6,7 +6,7 @@ use super::{
     super::{
         Classification, CoreError,
         labeler::Labeler,
-        visitor::{StopReason, Visit, Visitor},
+        visitor::{ArtifactStopReason, Visit, Visitor},
     },
     TabularDialect,
 };
@@ -48,14 +48,14 @@ impl TabularVisitor {
         let mut stats = vec![vec![ColumnStats::default(); column_names.len()]; labelers.len()];
         let mut record = ByteRecord::new();
         let mut records = 0usize;
-        let mut stop = StopReason::EndOfInput;
+        let mut stop = ArtifactStopReason::EndOfInput;
 
         loop {
             match csv_reader.read_byte_record(&mut record) {
                 Ok(true) => {}
                 Ok(false) => break,
                 Err(error) if records > 0 => {
-                    stop = StopReason::Error(error.to_string());
+                    stop = ArtifactStopReason::Error(error.to_string());
                     break;
                 }
                 Err(error) => return Err(error.into()),
@@ -297,7 +297,11 @@ water;O;H2O
         let visit = TabularVisitor::visit(&csv[..], &labelers)?;
 
         assert_eq!(visit.records, 3, "every row should be read");
-        assert_eq!(visit.stop, StopReason::EndOfInput, "ragged rows should not end the visit");
+        assert_eq!(
+            visit.stop,
+            ArtifactStopReason::EndOfInput,
+            "ragged rows should not end the visit"
+        );
         assert!(
             visit.classifications.contains(&Classification::new(Smiles, "smiles", 2, 2)),
             "valid cells in ragged rows should still be counted"

@@ -4,7 +4,7 @@ use super::{Classification, error::CoreError, labeler::Labeler};
 
 /// Reason the artifact's inspection ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StopReason {
+pub enum ArtifactStopReason {
     /// Entire artifact was successfully read.
     EndOfInput,
     /// Reading or parsing failed after some evidence was collected.
@@ -19,7 +19,7 @@ pub struct Visit {
     /// Number of records inspected.
     pub records: usize,
     /// Reason the visitor stopped.
-    pub stop: StopReason,
+    pub stop: ArtifactStopReason,
 }
 
 /// Visits structured dataset content and produces classification evidence.

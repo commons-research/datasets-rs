@@ -4,8 +4,8 @@ use futures::{AsyncRead, Stream, TryStreamExt, stream};
 use zenodo_rs::{ArtifactSelector, Record, RecordId, RecordQuery, ZenodoClient, ZenodoError};
 
 use super::super::{
-    error::CrawlerError,
-    source::{DatasetSource, RepositorySummary, SourceArtifact},
+    artifact::SourceArtifact, error::CrawlerError, repository::RepositorySummary,
+    source::DatasetSource,
 };
 
 /// Number of records to request from Zenodo per search page.

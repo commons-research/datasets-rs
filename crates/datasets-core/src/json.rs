@@ -9,7 +9,7 @@ use serde::de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess};
 use super::{
     Classification, CoreError,
     labeler::Labeler,
-    visitor::{StopReason, Visit, Visitor},
+    visitor::{ArtifactStopReason, Visit, Visitor},
 };
 
 /// Visits JSON dataset content.
@@ -37,7 +37,7 @@ impl Visitor for JsonVisitor {
 
             let buffered = std::io::BufReader::with_capacity(256 * 1024, reader);
             let mut deserializer = serde_json::Deserializer::from_reader(buffered);
-            let mut stop = StopReason::EndOfInput;
+            let mut stop = ArtifactStopReason::EndOfInput;
 
             while deserializer.end().is_err() {
                 let records_before = state.records;
@@ -47,7 +47,7 @@ impl Visitor for JsonVisitor {
                     if state.evidence.is_empty() {
                         return Err(error.into());
                     }
-                    stop = StopReason::Error(error.to_string());
+                    stop = ArtifactStopReason::Error(error.to_string());
                     break;
                 }
 
@@ -253,7 +253,7 @@ mod tests {
 
         assert_eq!(visit.classifications, expected);
         assert_eq!(visit.records, 1);
-        assert!(matches!(visit.stop, StopReason::EndOfInput));
+        assert!(matches!(visit.stop, ArtifactStopReason::EndOfInput));
 
         Ok(())
     }
@@ -295,7 +295,7 @@ mod tests {
 
         assert_eq!(visit.classifications.len(), 4);
         assert_eq!(visit.records, 1);
-        assert!(matches!(visit.stop, StopReason::EndOfInput));
+        assert!(matches!(visit.stop, ArtifactStopReason::EndOfInput));
 
         Ok(())
     }
@@ -339,7 +339,7 @@ mod tests {
 
         assert_eq!(visit.classifications, expected);
         assert_eq!(visit.records, 1);
-        assert!(matches!(visit.stop, StopReason::Error(_)));
+        assert!(matches!(visit.stop, ArtifactStopReason::Error(_)));
 
         Ok(())
     }
@@ -376,7 +376,7 @@ mod tests {
             "evidence collected before the failure should be kept"
         );
         assert!(
-            matches!(visit.stop, StopReason::Error(_)),
+            matches!(visit.stop, ArtifactStopReason::Error(_)),
             "the failure should be reported as the stop reason"
         );
 
