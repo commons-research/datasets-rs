@@ -120,6 +120,8 @@ impl<S: DatasetSource> CrawlSession<'_, S> {
             info!(
                 repository = %repository.id,
                 artifacts = result.artifacts.len(),
+                failures = result.failures.len(),
+                stop = ?result.stop,
                 "repository saved"
             );
 

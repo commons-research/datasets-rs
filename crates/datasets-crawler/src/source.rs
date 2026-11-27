@@ -6,6 +6,47 @@ use strum::VariantArray;
 
 use super::{artifact::SourceArtifact, error::CrawlerError, repository::RepositorySummary};
 
+/// Operations required to discover and retrieve remote datasets
+pub trait DatasetSource: Send + Sync {
+    /// Discovers datasets available from the remote source.
+    ///
+    /// # Errors
+    /// - Returns an error if dataset discovery fails.
+    fn discover_datasets(
+        &self,
+    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError>;
+
+    /// Lists the artifacts available within a dataset.
+    ///
+    /// Parameters:
+    /// - `dataset_id`: Identifier of the dataset whose artifacts should be
+    ///   listed.
+    ///
+    /// # Errors
+    /// - Returns an error if artifact listing fails.
+    fn list_artifacts<'a>(
+        &'a self,
+        repository_id: &'a str,
+    ) -> impl Stream<Item = Result<SourceArtifact, CrawlerError>> + Send + 'a;
+
+    /// Opens a remote artifact for asynchronous reading.
+    ///
+    /// # Parameters
+    /// - `dataset_id`: Identifier of the dataset containing the artifact.
+    /// - `artifact`: Metadata describing the artifact to open.
+    ///
+    /// # Errors
+    /// - Returns an error if the artifact cannot be opened.
+    fn open_artifact<'a>(
+        &'a self,
+        dataset_id: &'a str,
+        artifact: &'a SourceArtifact,
+    ) -> impl Future<Output = Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError>> + Send + 'a;
+
+    /// Returns the provider identifier used for database records.
+    fn provider(&self) -> &'static str;
+}
+
 /// File format exposed by dataset source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, VariantArray)]
 #[non_exhaustive]
@@ -75,46 +116,4 @@ impl FromStr for FileFormat {
             _ => Err(CrawlerError::ParseFileFormat(s.to_owned())),
         }
     }
-}
-
-/// Operations required to discover and retrieve remote datasets
-pub trait DatasetSource: Send + Sync {
-    /// Discovers datasets available from the remote source.
-    ///
-    /// # Errors
-    /// - Returns an error if dataset discovery fails.
-    fn discover_datasets(
-        &self,
-    ) -> Result<impl Stream<Item = Result<RepositorySummary, CrawlerError>> + Send, CrawlerError>;
-
-    /// Lists the artifacts available within a dataset.
-    ///
-    /// Parameters:
-    /// - `dataset_id`: Identifier of the dataset whose artifacts should be
-    ///   listed.
-    /// - `formats`: The file formats that should be inspected.
-    ///
-    /// # Errors
-    /// - Returns an error if artifact listing fails.
-    fn list_artifacts<'a>(
-        &'a self,
-        repository_id: &'a str,
-    ) -> impl Stream<Item = Result<SourceArtifact, CrawlerError>> + Send + 'a;
-
-    /// Opens a remote artifact for asynchronous reading.
-    ///
-    /// # Parameters
-    /// - `dataset_id`: Identifier of the dataset containing the artifact.
-    /// - `artifact`: Metadata describing the artifact to open.
-    ///
-    /// # Errors
-    /// - Returns an error if the artifact cannot be opened.
-    fn open_artifact<'a>(
-        &'a self,
-        dataset_id: &'a str,
-        artifact: &'a SourceArtifact,
-    ) -> impl Future<Output = Result<impl AsyncRead + Send + Unpin + 'a, CrawlerError>> + Send + 'a;
-
-    /// Returns the provider identifier used for database records.
-    fn provider(&self) -> &'static str;
 }

@@ -3,7 +3,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, Transaction, params};
 
-use super::{CrawlerError, Failure, RepositoryResult, artifact::ArtifactResult};
+use super::{
+    CrawlerError, Failure, RepositoryResult, artifact::ArtifactResult, repository::RepositoryStop,
+};
 
 /// Manages database storage of crawler results.
 pub struct Database {
@@ -147,7 +149,8 @@ impl Database {
             insert_failure(&tx, repository_id, None, failure)?;
         }
 
-        let completed = result.failures.is_empty()
+        let completed = result.stop == RepositoryStop::Exhausted
+            && result.failures.is_empty()
             && result.artifacts.iter().all(|artifact| artifact.failure.is_none());
 
         if completed {

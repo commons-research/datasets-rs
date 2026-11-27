@@ -20,7 +20,7 @@ pub enum RepositoryStop {
     Exhausted,
     /// No artifact formats were relevant to the required artifact format type
     NoEligibleFormats,
-    /// The number of relevant artifact formats were low
+    /// The number of relevant artifacts with matching content were low
     LowContentYield,
     /// Failed to resolve the repository artifact listings
     ListingFailed,
@@ -41,6 +41,7 @@ pub struct RepositoryAssessment {
 
 impl RepositoryAssessment {
     /// Evaluates whether repository inspection should terminate.
+    #[must_use]
     pub fn assess(&self, policy: &RepositoryPolicy) -> Option<RepositoryStop> {
         if self.artifacts_seen >= policy.min_artifacts_seen && self.artifacts_eligible == 0 {
             return Some(RepositoryStop::NoEligibleFormats);

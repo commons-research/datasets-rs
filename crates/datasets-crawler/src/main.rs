@@ -5,7 +5,8 @@
 use std::time::Duration;
 
 use datasets_crawler::{
-    CrawlConfig, CrawlStatus, CrawlerError, Database, HuggingFaceSource, ZenodoSource, crawl,
+    CrawlConfig, CrawlStatus, CrawlerError, Database, HuggingFaceSource, RepositoryPolicy,
+    ZenodoSource, crawl,
 };
 
 /// Command-line configuration.
@@ -55,6 +56,11 @@ async fn run(args: ResolvedArgs) -> Result<(), CrawlerError> {
         formats: args.formats,
         max_repositories: args.max_repositories,
         stall_timeout: STALL_TIMEOUT,
+        repository_policy: RepositoryPolicy {
+            min_artifacts_seen: 100,
+            min_artifacts_inspected: 20,
+            min_match_ratio: 0.05,
+        },
     };
 
     let mut database = Database::open_database("datasets.sqlite")?;
